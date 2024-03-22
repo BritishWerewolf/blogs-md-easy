@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use clap::Parser as ClapParser;
-use std::{collections::{HashMap, HashSet}, fs, path::PathBuf};
+use std::{collections::HashMap, fs, path::PathBuf};
 use nom::{branch::alt, bytes::complete::{tag, take_until, take_while_m_n}, character::complete::{alpha1, alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till}, sequence::{delimited, tuple}, IResult};
 use nom_locate::LocatedSpan;
 
@@ -242,6 +242,7 @@ fn replace_substring(original: &str, start: usize, end: usize, replacement: &str
 /// let key = "title";
 /// let replacements = get_replacement(markdown, &meta_values, &key);
 /// ```
+#[allow(unused)]
 fn get_replacement(markdown: Span, meta_values: &HashMap<String, String>, key: &str) -> String {
     match key {
         "title" => match meta_values.contains_key("title") {
@@ -272,7 +273,7 @@ fn main() -> Result<(), anyhow::Error> {
        Err(anyhow!("The template file does not exist."))?;
     };
     let template = std::fs::read_to_string(&template)?;
-
+    let template = Span::new(&template);
 
     // Get only existing markdowns.
     let markdown_urls: Vec<PathBuf> = cli.markdowns
@@ -283,71 +284,47 @@ fn main() -> Result<(), anyhow::Error> {
         .iter()
         .filter_map(|path| fs::read_to_string(path).ok())
         .collect();
+    let markdowns: Vec<(String, PathBuf)> = markdowns.into_iter().zip(markdown_urls).collect();
 
+    let mut placeholders = parse_placeholder_locations(template)?;
+    placeholders.sort_by(|a, b| b.1.span.location_offset().cmp(&a.1.span.location_offset()));
 
-    // Get the keys first because a HashMap is not ordered.
-    let placeholders = parse_placeholder_locations(Span::new(&template))?;
-    let placeholder_keys: Vec<String> = placeholders.iter().map(|(key, _)| key.to_string()).collect();
-    let placeholders: HashMap<String, Placeholder> = placeholders.into_iter().collect();
+    for (markdown, markdown_url) in &markdowns {
+        let markdown = Span::new(markdown);
+        let mut html_doc = template.fragment().to_string();
 
-    if !placeholders.contains_key("title") && !placeholders.contains_key("content") {
-        Err(anyhow!("Template must define 'title' and 'content' placeholders"))?;
-    }
-
-    let html_docs: Result<Vec<String>, anyhow::Error> = markdowns
-    .into_iter()
-    .map(|markdown| {
-        let markdown = Span::new(&markdown);
-        let mut html_doc = template.clone();
-
-        // Attempt to retrieve a key-value of meta values, and return the
-        // leftover markdown.
-        // This function returns an Option, because nom would fail if there is
-        // no meta, so even though we unwrap_or, we still need to unwrap.
         let (markdown, meta_values) = parse_meta_section(markdown).unwrap_or((markdown, Some(vec![])));
-        let meta_values = meta_values.unwrap_or_default();
-        let meta_values: HashMap<String, String> = meta_values.into_iter().map(|m| (m.key, m.value)).collect();
+        let mut variables: HashMap<String, String> = match meta_values {
+            Some(meta_values) => meta_values.iter().map(|mv| (mv.key.to_owned(), mv.value.to_owned())).collect(),
+            None => Vec::new().into_iter().collect(),
+        };
 
-        // REVIEW This is a really lame system, but it checks to ensure that the
-        // markdown and template have the same keys.
-        let mut markdown_keys: HashSet<&String> = meta_values.keys().collect();
-        let content_string = "title".to_string();
-        markdown_keys.insert(&content_string);
-        let content_string = "content".to_string();
-        markdown_keys.insert(&content_string);
-        let placeholder_keys_set: HashSet<&String> = placeholder_keys.iter().collect();
-
-        if placeholder_keys_set.difference(&markdown_keys).count() > 0 {
-            return Err(anyhow!("Template must define all meta values. Missing: {:?}", placeholder_keys_set.difference(&markdown_keys)));
-        }
-        drop(markdown_keys);
-        drop(content_string);
-        drop(placeholder_keys_set);
-
-        for key in &placeholder_keys {
-            let placeholder = placeholders.get(key).unwrap();
-            let replacements = get_replacement(markdown, &meta_values, &key);
-
-            // FIXME The meta values are creating <p> tags which isn't ideal.
-            // We don't want to apply Markdown to the
-            let replacements = if key == "content" {
-                markdown::to_html(&replacements)
+        // Make sure that we have a title and content variable.
+        if !variables.contains_key("title") {
+            let title_res = parse_title(markdown);
+            if title_res.is_ok() {
+                let (_, title) = title_res.unwrap();
+                variables.insert("title".to_string(), title.to_string());
             } else {
-                replacements
-            };
-
-            html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &replacements);
+                return Err(anyhow!("Missing title"));
+            }
+        }
+        if !variables.contains_key("content") {
+            let content = markdown.fragment().trim().to_string();
+            let content = markdown::to_html(&content);
+            variables.insert("content".to_string(), content);
         }
 
-        Ok(html_doc)
-    })
-    .collect();
+        for (key, placeholder) in &placeholders {
+            if let Some(variable) = variables.get(key) {
+                html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &variable);
+            } else {
+                let url = markdown_url.to_str().unwrap_or_default();
+                return Err(anyhow!("Missing variable '{}' in markdown '{}'.", key, url));
+            }
+        }
 
-    let html_docs = html_docs?;
-    let html_docs = markdown_urls.into_iter().zip(html_docs);
-
-    for (url, html_doc) in html_docs {
-        let output_path = url.with_extension("html");
+        let output_path = markdown_url.with_extension("html");
         fs::write(output_path, html_doc)?;
     }
 
@@ -360,6 +337,46 @@ fn main() -> Result<(), anyhow::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generic_test() {
+        let template = Span::new("<title>{{ £title }}</title><h1>{{ £title }}</h1><small>{{ £publish_date }}</small>");
+        let markdowns = vec![
+            Span::new(":meta\npublish_date = 2021-01-01\n:meta\n# Markdown title\nContent paragraph")
+        ];
+
+        let mut placeholders = parse_placeholder_locations(template).expect("to have placeholders");
+        placeholders.sort_by(|a, b| b.1.span.location_offset().cmp(&a.1.span.location_offset()));
+
+        for markdown in markdowns {
+            let (markdown, meta_values) = parse_meta_section(markdown).expect("to parse meta section");
+            let mut variables: HashMap<String, String> = match meta_values {
+                Some(meta_values) => meta_values.iter().map(|mv| (mv.key.to_owned(), mv.value.to_owned())).collect(),
+                None => Vec::new().into_iter().collect(),
+            };
+
+            // Make sure that we have a title and content variable.
+            if !variables.contains_key("title") {
+                let (_, title) = parse_title(markdown).expect("title to exist");
+                variables.insert("title".to_string(), title.to_string());
+            }
+            if !variables.contains_key("content") {
+                variables.insert("content".to_string(), markdown.fragment().trim().to_string());
+            }
+
+            let mut html_doc = template.fragment().to_string();
+            for (key, placeholder) in &placeholders {
+                if let Some(variable) = variables.get(key) {
+                    html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &variable);
+                } else {
+                    assert!(false, "No variable for key: {}", key);
+                }
+            }
+            dbg!(&html_doc);
+        }
+
+        assert!(false);
+    }
 
     #[test]
     fn can_find_variable() {

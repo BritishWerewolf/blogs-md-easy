@@ -262,7 +262,13 @@ fn create_variables(markdown: Span, meta_values: Option<Vec<Meta>>) -> Result<Ha
     }
     if !variables.contains_key("content") {
         let content = markdown.fragment().trim().to_string();
-        let content = markdown::to_html(&content);
+        let content = markdown::to_html_with_options(&content, &markdown::Options {
+            compile: markdown::CompileOptions {
+                allow_dangerous_html: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }).unwrap_or_default();
         variables.insert("content".to_string(), content);
     }
 

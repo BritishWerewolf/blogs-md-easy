@@ -306,7 +306,22 @@ fn main() -> Result<(), anyhow::Error> {
         // Parse the meta values, and combine them with the title and content of
         // the markdown file.
         let (markdown, meta_values) = parse_meta_section(markdown).unwrap_or((markdown, Some(vec![])));
+        if meta_values.is_none() {
+            return Err(anyhow!("Failed to parse meta values in '{}'", markdown_url.to_string_lossy()));
+        }
         let variables: HashMap<String, String> = create_variables(markdown, meta_values)?;
+
+        // Check for unused variables.
+        let placeholder_keys = placeholders.iter().map(|(key, _)| key).collect::<Vec<&String>>();
+        let unused_variables = variables.keys().filter(|key| !placeholder_keys.contains(key)).collect::<Vec<&String>>();
+        if !unused_variables.is_empty() {
+            println!(
+                "Warning: Unused variable{} in '{}': {}",
+                if &unused_variables.len() == &(1 as usize) { "" } else { "s" },
+                &markdown_url.to_string_lossy(),
+                unused_variables.iter().map(|v| v.to_string()).collect::<Vec<String>>().join(", ")
+            );
+        }
 
         for (key, placeholder) in &placeholders {
             if let Some(variable) = variables.get(key) {

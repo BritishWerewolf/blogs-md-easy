@@ -338,6 +338,13 @@ fn main() -> Result<(), anyhow::Error> {
             }
         }
 
+        // Add newlines before each heading element, because I'd like the HTML
+        // to be easy to read.
+        for h in 2..6 {
+            let h = format!("<h{h}>");
+            html_doc = html_doc.replace(&h, &format!("\n{h}"));
+        };
+
         let output_path = markdown_url.with_extension("html");
         fs::write(output_path, html_doc)?;
     }

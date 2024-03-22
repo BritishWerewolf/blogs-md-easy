@@ -150,6 +150,8 @@ All generated HTML files will be placed in the same directory as the markdown, u
 Some formatting will be applied to the generated output, but it will likely need human intervention if you want the document to be formatted correct - such as indenting.
 
 ## Todo List
+- [ ] Generate for multiple templates at once.
+- [ ] Option to run against markdowns to determine if they were built off a different template.
 - [ ] Add comments to the meta section.
 - [ ] Formatting of the generated file.
 - [ ] Document all functions.

@@ -300,6 +300,10 @@ fn main() -> Result<(), anyhow::Error> {
         let markdown = Span::new(&markdown);
         let mut html_doc = template.clone();
 
+        // Attempt to retrieve a key-value of meta values, and return the
+        // leftover markdown.
+        // This function returns an Option, because nom would fail if there is
+        // no meta, so even though we unwrap_or, we still need to unwrap.
         let (markdown, meta_values) = parse_meta_section(markdown).unwrap_or((markdown, Some(vec![])));
         let meta_values = meta_values.unwrap_or_default();
         let meta_values: HashMap<String, String> = meta_values.into_iter().map(|m| (m.key, m.value)).collect();
@@ -307,6 +311,8 @@ fn main() -> Result<(), anyhow::Error> {
         for key in &placeholder_keys {
             let placeholder = placeholders.get(key).unwrap();
             let replacements = get_replacement(markdown, &meta_values, &key);
+            // FIXME The meta values are creating <p> tags which isn't ideal.
+            let replacements = markdown::to_html(&replacements);
 
             html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &replacements);
         }

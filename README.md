@@ -8,7 +8,7 @@ Iteratively convert a collection of Markdown files into a respective HTML templa
 Ensure that you have [cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html) installed.  
 Then you can run the following command in your terminal.
 ```sh
-$ cargo install cargo-release
+$ cargo install blogs-md-easy
 ```
 
 ## Usage

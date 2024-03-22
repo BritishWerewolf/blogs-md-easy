@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use clap::Parser as ClapParser;
 use std::{collections::HashMap, fs, path::PathBuf};
-use nom::{branch::alt, bytes::complete::{tag, take_until, take_while_m_n}, character::complete::{alpha1, alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till}, sequence::{delimited, tuple}, IResult};
+use nom::{branch::alt, bytes::complete::{tag, take_until, take_while_m_n}, character::complete::{alpha1, alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till}, sequence::{delimited, preceded, tuple}, IResult};
 use nom_locate::LocatedSpan;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -122,8 +122,14 @@ pub fn parse_meta_section(input: Span) -> IResult<Span, Option<Vec<Meta>>> {
 }
 
 pub fn parse_title(input: Span) -> IResult<Span, Span> {
-    let (input, _) = tuple((multispace0, tag("#"), space0))(input)?;
-    let (input, title) = alt((take_until("\r\n"), take_until("\n")))(input)?;
+    let (input, _) = multispace0(input)?;
+
+    let (input, title) = alt((
+        // Either a Markdown title...
+        preceded(tuple((tag("#"), space0)), alt((take_until("\r\n"), take_until("\n")))),
+        // ... or an HTML title.
+        delimited(tag("<h1>"), take_until("</h1>"), tag("</h1>"))
+    ))(input)?;
 
     Ok((input.to_owned(), title.to_owned()))
 }
@@ -367,7 +373,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn can_find_variable() {
+    fn can_parse_variable() {
         let input = Span::new("£content }}");
         let (input, variable) = parse_variable(input).unwrap();
 
@@ -376,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn can_find_variable_with_underscore() {
+    fn can_parse_variable_with_underscore() {
         let input = Span::new("£publish_date }}");
         let (input, variable) = parse_variable(input).unwrap();
 
@@ -385,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn can_find_placeholder() {
+    fn can_parse_placeholder() {
         let input = Span::new("{{ £content }}\nTemplate content");
         let parsed_placeholder = parse_placeholder(input);
 
@@ -397,8 +403,21 @@ mod tests {
     }
 
     #[test]
-    fn can_find_md_title() {
+    fn can_parse_md_title() {
         let markdown = Span::new("# My Title\nMy content");
+        let parsed_title = parse_title(markdown);
+
+        assert!(parsed_title.is_ok());
+
+        let (input, title) = parsed_title.unwrap();
+        assert_eq!(title.fragment(), &"My Title");
+        assert_eq!(input.fragment(), &"\nMy content");
+    }
+
+    #[test]
+    fn can_parse_html_title() {
+        // Deliberately include spaces at the start of this line.
+        let markdown = Span::new("    <h1>My Title</h1>\nMy content");
         let parsed_title = parse_title(markdown);
 
         assert!(parsed_title.is_ok());

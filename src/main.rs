@@ -11,15 +11,15 @@ type Span<'a> = LocatedSpan<&'a str>;
 #[derive(Debug, ClapParser)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// HTML template that the Markdowns will use.
-    #[arg(short, long, value_name = "FILE")]
+    /// HTML template that the Markdowns will populate.
+    #[arg(short, long, required = true, value_name = "FILE")]
     template: PathBuf,
 
     // num_args is required so that we don't have to specify the option before
     // each file...
     // `-m file.md file2.md`    rather than    `-m file.md -m file2.md`
-    /// The directory or list of Markdown files.
-    #[arg(short, long, value_name = "FILE", num_args = 1..)]
+    /// List of Markdown files ending in .md.
+    #[arg(short, long, required = true, value_name = "FILES", num_args = 1..)]
     markdowns: Vec<PathBuf>,
 }
 
@@ -93,6 +93,11 @@ impl<'a> Default for Placeholder<'a> {
 ////////////////////////////////////////////////////////////////////////////////
 // Parsers
 fn parse_meta_values(input: Span) -> IResult<Span, Meta> {
+    // There might be an optional `£` at the start.
+    let (input, _) = multispace0(input)?;
+    let (input, _) = opt(tag("£"))(input)?;
+
+    // Variable pattern.
     let (input, key) = recognize(tuple((
         multispace0,
         alpha1,
@@ -101,6 +106,8 @@ fn parse_meta_values(input: Span) -> IResult<Span, Meta> {
 
     let (input, _) = tuple((multispace0, tag("="), multispace0))(input)?;
 
+    // The value of the variable, everything after the equals sign.
+    // Continue to a newline or the end of the string.
     let (input, value) = alt((take_until("\n"), rest))(input)?;
 
     Ok((input, Meta { key: key.trim().to_string(), value: value.trim().to_string() }))
@@ -417,6 +424,14 @@ mod tests {
     }
 
     #[test]
+    fn can_parse_meta_value_with_prefix() {
+        let input = Span::new("£publish_date = 2024-01-01");
+        dbg!(input);
+        let (_, meta) = parse_meta_values(input).expect("to parse meta key-value");
+        assert_eq!(meta, Meta { key: "publish_date".to_string(), value: "2024-01-01".to_string() });
+    }
+
+    #[test]
     fn can_parse_metadata_colon() {
         let input = Span::new(":meta\ntitle = Meta title\nauthor = John Doe\n:meta\n# Markdown title\nThis is my content");
         let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
@@ -455,7 +470,7 @@ mod tests {
 
     #[test]
     fn can_replace_placeholder_from_meta() {
-        let input = Span::new("<meta>\ntitle = Meta title\nauthor = John Doe\n</meta>\n# Markdown title\nThis is my content");
+        let input = Span::new("<meta>\ntitle = Meta title\n£author = John Doe\n</meta>\n# Markdown title\nThis is my content");
         let template = Span::new("<html>\n<head>\n<title>{{ £title }}</title>\n</head>\n<body>\n<h1>{{ £title }}</h1>\n<small>By {{ £author }}</small>\n<section>{{ £content }}</section>\n</body>\n</html>");
 
         let mut placeholders = parse_placeholder_locations(template).expect("to parse placeholders");
@@ -503,6 +518,6 @@ mod tests {
             }
         }
 
-        assert_eq!(html_doc, "<html>\n<head>\n<title>Meta title</title>\n</head>\n<body>\n<h1>Meta title</h1>\n<small>By John Doe</small>\n<section><h1 id='markdown_title'>Markdown title</h1>\n\n<p>This is my content</p>\n</section>\n</body>\n</html>");
+        assert_eq!(html_doc, "<html>\n<head>\n<title>Meta title</title>\n</head>\n<body>\n<h1>Meta title</h1>\n<small>By John Doe</small>\n<section><h1>Markdown title</h1>\n<p>This is my content</p></section>\n</body>\n</html>");
     }
 }

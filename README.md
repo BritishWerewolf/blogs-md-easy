@@ -1,5 +1,15 @@
+[![Crates.io Version](https://img.shields.io/crates/v/blogs-md-easy)](https://crates.io/crates/blogs-md-easy)
+[![GitHub Repo stars](https://img.shields.io/github/stars/BritishWerewolf/blogs-md-easy)](https://github.com/BritishWerewolf/blogs-md-easy)
+
 # Blogs Made Easy
 Iteratively convert a collection of Markdown files into a respective HTML template.
+
+## Installation
+Ensure that you have [cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html) installed.  
+Then you can run the following command in your terminal.
+```sh
+$ cargo install cargo-release
+```
 
 ## Usage
 Below is the help page for the program.
@@ -142,3 +152,5 @@ Some formatting will be applied to the generated output, but it will likely need
 ## Todo List
 - [ ] Add comments to the meta section.
 - [ ] Formatting of the generated file.
+- [ ] Document all functions.
+- [ ] Reduce complexity of `main` function, to make it easier to test.

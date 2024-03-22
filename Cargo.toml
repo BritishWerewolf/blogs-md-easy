@@ -1,7 +1,16 @@
 [package]
-name = "markdown-to-html-template"
-version = "0.0.3"
+name = "blogs-md-easy"
+description = "Iteratively convert a collection of Markdown files into a respective HTML template."
+version = "0.1.0"
 edition = "2021"
+keywords = ["markdown", "html", "template", "blog"]
+categories = ["command-line-interface", "config", "web-programming"]
+authors = ["BritishWerewolf"]
+homepage = "https://github.com/BritishWerewolf/blogs-md-easy"
+repository = "https://github.com/BritishWerewolf/blogs-md-easy"
+documentation = "https://docs.rs/crate/blogs-md-easy"
+license = "MIT"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -1,10 +1,10 @@
-# markdown-into-template
+# Blogs Made Easy
 Iteratively convert a collection of Markdown files into a respective HTML template.
 
 ## Usage
 Below is the help page for the program.
 ```
-Usage: markdown-to-html-template.exe --template <FILE> --markdowns <FILES>...
+Usage: blogs-md-easy.exe --template <FILE> --markdowns <FILES>...
 
 Options:
   -t, --template <FILE>       HTML template that the Markdowns will populate

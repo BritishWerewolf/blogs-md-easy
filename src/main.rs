@@ -1,10 +1,27 @@
-use std::{collections::HashMap, fs, path::Path};
+use anyhow::anyhow;
+use clap::Parser as ClapParser;
+use std::{collections::HashMap, fs, path::PathBuf};
 use nom::{branch::alt, bytes::complete::{tag, take_until, take_while_m_n}, character::complete::{alpha1, alphanumeric0, alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till}, sequence::{delimited, tuple}, IResult};
 use nom_locate::LocatedSpan;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Stucts and types
 type Span<'a> = LocatedSpan<&'a str>;
+
+#[derive(Debug, ClapParser)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    /// HTML template that the Markdowns will use.
+    #[arg(short, long, value_name = "FILE")]
+    template: PathBuf,
+
+    // num_args is required so that we don't have to specify the option before
+    // each file...
+    // `-m file.md file2.md`    rather than    `-m file.md -m file2.md`
+    /// The directory or list of Markdown files.
+    #[arg(short, long, value_name = "FILE", num_args = 1..)]
+    markdowns: Vec<PathBuf>,
+}
 
 #[derive(Debug, PartialEq)]
 pub struct Meta {
@@ -246,22 +263,36 @@ fn get_replacement(markdown: Span, meta_values: &HashMap<String, String>, key: &
 
 
 fn main() -> Result<(), anyhow::Error> {
-    let template = fs::read_to_string("target/debug/template.html")?;
-    let markdown_urls = vec![
-        "target/debug/a.md",
-        "target/debug/b.md",
-        "target/debug/c.md",
-    ];
-    let markdowns = vec![
-        fs::read_to_string("target/debug/a.md")?,
-        fs::read_to_string("target/debug/b.md")?,
-        fs::read_to_string("target/debug/c.md")?,
-    ];
+    let cli = Cli::parse();
+
+    let template = cli.template;
+
+    // Check that the actual template exists.
+    if !template.try_exists().map_err(|_| anyhow!("The template could not be found."))? {
+       Err(anyhow!("The template file does not exist."))?;
+    };
+    let template = std::fs::read_to_string(&template)?;
+
+
+    // Get only existing markdowns.
+    let markdown_urls: Vec<PathBuf> = cli.markdowns
+        .into_iter()
+        .filter(|file| file.exists() && file.extension().unwrap_or_default() == "md" )
+        .collect();
+    let markdowns: Vec<String> = markdown_urls
+        .iter()
+        .filter_map(|path| fs::read_to_string(path).ok())
+        .collect();
+
 
     // Get the keys first because a HashMap is not ordered.
     let placeholders = parse_placeholder_locations(Span::new(&template))?;
     let placeholder_keys: Vec<String> = placeholders.iter().map(|(key, _)| key.to_string()).collect();
     let placeholders: HashMap<String, Placeholder> = placeholders.into_iter().collect();
+
+    if !placeholders.contains_key("title") && !placeholders.contains_key("content") {
+        Err(anyhow!("Template must define 'title' and 'content' placeholders"))?;
+    }
 
     let html_docs: Vec<String> = markdowns
     .into_iter()
@@ -287,7 +318,7 @@ fn main() -> Result<(), anyhow::Error> {
     let html_docs = markdown_urls.into_iter().zip(html_docs);
 
     for (url, html_doc) in html_docs {
-        let output_path = Path::new(url).with_extension("html");
+        let output_path = url.with_extension("html");
         fs::write(output_path, html_doc)?;
     }
 

@@ -258,3 +258,77 @@ fn main() -> Result<(), anyhow::Error> {
 
     Ok(())
 }
+
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn can_find_variable() {
+        let input = Span::new("£content }}");
+        let (input, variable) = parse_variable(input).unwrap();
+
+        assert_eq!(variable.fragment(), &"content");
+        assert_eq!(input.fragment(), &" }}");
+    }
+
+    #[test]
+    fn can_find_placeholder() {
+        let input = Span::new("{{ £content }}\nTemplate content");
+        let parsed_placeholder = parse_placeholder(input);
+
+        assert!(parsed_placeholder.is_ok());
+
+        let (input, placeholder) = parsed_placeholder.unwrap();
+        assert_eq!(placeholder.fragment(), &"{{ £content }}");
+        assert_eq!(input.fragment(), &"\nTemplate content");
+    }
+
+    #[test]
+    fn can_find_md_title() {
+        let markdown = Span::new("# My Title\nMy content");
+        let parsed_title = parse_title(markdown);
+
+        assert!(parsed_title.is_ok());
+
+        let (input, title) = parsed_title.unwrap();
+        assert_eq!(title.fragment(), &"My Title");
+        assert_eq!(input.fragment(), &"\nMy content");
+    }
+
+    #[test]
+    fn can_parse_meta_value() {
+        let input = Span::new("title = My Title");
+        let (_, meta) = parse_meta_values(input).expect("to parse meta key-value");
+        assert_eq!(meta, Meta { key: "title".to_string(), value: "My Title".to_string() });
+    }
+
+    #[test]
+    fn can_parse_metadata_colon() {
+        let input = Span::new(":meta\ntitle = Meta title\nauthor = John Doe\n:meta\n# Markdown title\nThis is my content");
+        let (input, meta) = parse_meta_section(input).expect("to parse the meta");
+
+        assert_eq!(vec![
+            Meta { key: "title".to_string(), value: "Meta title".to_string() },
+            Meta { key: "author".to_string(), value: "John Doe".to_string() },
+        ], meta);
+
+        assert_eq!(input.fragment(), &"\n# Markdown title\nThis is my content");
+    }
+
+    #[test]
+    fn can_parse_metadata_tag() {
+        let input = Span::new("<meta>\ntitle = Meta title\nauthor = John Doe\n</meta>\n# Markdown title\nThis is my content");
+        let (input, meta) = parse_meta_section(input).expect("to parse the meta");
+
+        assert_eq!(vec![
+            Meta { key: "title".to_string(), value: "Meta title".to_string() },
+            Meta { key: "author".to_string(), value: "John Doe".to_string() },
+        ], meta);
+
+        assert_eq!(input.fragment(), &"\n# Markdown title\nThis is my content");
+    }
+}

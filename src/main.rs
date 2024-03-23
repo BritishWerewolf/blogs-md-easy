@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, path::Path};
 use nom::{branch::alt, bytes::complete::{tag, take_until, take_while_m_n}, character::complete::{alpha1, alphanumeric0, alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till}, sequence::{delimited, tuple}, IResult};
 use nom_locate::LocatedSpan;
 
@@ -89,12 +89,12 @@ fn parse_meta_values(input: Span) -> IResult<Span, Meta> {
     Ok((input, Meta { key: key.trim().to_string(), value: value.trim().to_string() }))
 }
 
-pub fn parse_meta_section(input: Span) -> IResult<Span, Vec<Meta>> {
-    delimited(
+pub fn parse_meta_section(input: Span) -> IResult<Span, Option<Vec<Meta>>> {
+    opt(delimited(
         tuple((multispace0, alt((tag(":meta"), tag("<meta>"))))),
         many1(parse_meta_values),
         tuple((multispace0, alt((tag(":meta"), tag("</meta>"))))),
-    )(input)
+    ))(input)
 }
 
 pub fn parse_title(input: Span) -> IResult<Span, Span> {
@@ -137,7 +137,7 @@ fn take_till_placeholder(input: Span) -> IResult<Span, Span> {
 }
 
 /// This will consume the entire string!
-fn parse_placeholder_locations(input: Span) -> Result<HashMap<String, Placeholder>, anyhow::Error> {
+fn parse_placeholder_locations(input: Span) -> Result<Vec<(String, Placeholder)>, anyhow::Error> {
     let mut old_input = input;
     let default_span = Span::new("");
     let mut placeholder = Span::new("start");
@@ -167,7 +167,6 @@ fn parse_placeholder_locations(input: Span) -> Result<HashMap<String, Placeholde
     // Sort in reverse so that when we replace each placeholder, the offsets do
     // not affect offsets after this point.
     placeholders.sort_by(|a, b| b.1.span.location_offset().cmp(&a.1.span.location_offset()));
-    let placeholders: HashMap<String, Placeholder> = placeholders.into_iter().collect();
 
     Ok(placeholders)
 }
@@ -206,55 +205,91 @@ fn replace_substring(original: &str, start: usize, end: usize, replacement: &str
     result
 }
 
+/// Return a replacement string for a given key.
+///
+/// # Arguments
+///
+/// * `markdown` - The markdown string.
+/// * `meta_values` - A kay-value pair of meta values.
+/// * `key` - The key to look up the replacement for.
+///
+/// # Returns
+///
+/// * The replacement string for the given key if found.
+/// * An empty string if no replacement is found.
+///
+/// # Example
+/// ```
+/// let markdown = Span::new("# Markdown title\nContent paragraph");
+/// let meta_values = parse_meta_section(markdown).unwrap_or((markdown, Some(vec![])));
+/// let key = "title";
+/// let replacements = get_replacement(markdown, &meta_values, &key);
+/// ```
+fn get_replacement(markdown: Span, meta_values: &HashMap<String, String>, key: &str) -> String {
+    match key {
+        "title" => match meta_values.contains_key("title") {
+            true => meta_values.get("title").unwrap().to_owned(),
+            false => match parse_title(markdown) {
+                Ok((_, title)) => title.to_string(),
+                _ => "".to_owned(),
+            },
+        },
+        "content" => markdown.trim().to_string(),
+        key if meta_values.contains_key(key) => {
+            meta_values.get(key).unwrap().to_string()
+        },
+        _ => "".to_string(),
+    }
+}
+
+
 
 
 fn main() -> Result<(), anyhow::Error> {
     let template = fs::read_to_string("target/debug/template.html")?;
+    let markdown_urls = vec![
+        "target/debug/a.md",
+        "target/debug/b.md",
+        "target/debug/c.md",
+    ];
     let markdowns = vec![
         fs::read_to_string("target/debug/a.md")?,
         fs::read_to_string("target/debug/b.md")?,
         fs::read_to_string("target/debug/c.md")?,
     ];
 
+    // Get the keys first because a HashMap is not ordered.
     let placeholders = parse_placeholder_locations(Span::new(&template))?;
+    let placeholder_keys: Vec<String> = placeholders.iter().map(|(key, _)| key.to_string()).collect();
+    let placeholders: HashMap<String, Placeholder> = placeholders.into_iter().collect();
 
     let html_docs: Vec<String> = markdowns
     .into_iter()
     .map(|markdown| {
         let markdown = Span::new(&markdown);
-        let mut new_markdown = template.clone();
+        let mut html_doc = template.clone();
 
-        let (markdown, meta_values) = parse_meta_section(markdown).unwrap_or((markdown, vec![]));
+        let (markdown, meta_values) = parse_meta_section(markdown).unwrap_or((markdown, Some(vec![])));
+        let meta_values = meta_values.unwrap_or_default();
         let meta_values: HashMap<String, String> = meta_values.into_iter().map(|m| (m.key, m.value)).collect();
 
-        // First check if there is a <meta> title.
-        // If not, then see if we can parse an <h1> tag, and use that.
-        let title = match meta_values.contains_key("title") {
-            true => meta_values.get("title").unwrap().to_owned(),
-            false => match parse_title(markdown) {
-                Ok((_, title)) => title.to_string(),
-                _ => "".to_owned(),
-            },
-        };
+        for key in &placeholder_keys {
+            let placeholder = placeholders.get(key).unwrap();
+            let replacements = get_replacement(markdown, &meta_values, &key);
 
-        for (key, placeholder) in &placeholders {
-            // Title is special because it might appear in the meta data.
-            let replacements = match key.as_str() {
-                "title" => title.trim().to_string(),
-                _ => markdown.trim().to_string(),
-            };
-
-            new_markdown = replace_substring(
-                &new_markdown,
-                placeholder.selection.start.offset,
-                placeholder.selection.end.offset,
-                &replacements,
-            );
+            html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &replacements);
         }
 
-        new_markdown
+        html_doc
     })
     .collect();
+
+    let html_docs = markdown_urls.into_iter().zip(html_docs);
+
+    for (url, html_doc) in html_docs {
+        let output_path = Path::new(url).with_extension("html");
+        fs::write(output_path, html_doc)?;
+    }
 
     Ok(())
 }
@@ -309,12 +344,13 @@ mod tests {
     #[test]
     fn can_parse_metadata_colon() {
         let input = Span::new(":meta\ntitle = Meta title\nauthor = John Doe\n:meta\n# Markdown title\nThis is my content");
-        let (input, meta) = parse_meta_section(input).expect("to parse the meta");
+        let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
 
-        assert_eq!(vec![
+        assert!(meta.is_some());
+        assert_eq!(meta.unwrap(), vec![
             Meta { key: "title".to_string(), value: "Meta title".to_string() },
             Meta { key: "author".to_string(), value: "John Doe".to_string() },
-        ], meta);
+        ]);
 
         assert_eq!(input.fragment(), &"\n# Markdown title\nThis is my content");
     }
@@ -322,13 +358,110 @@ mod tests {
     #[test]
     fn can_parse_metadata_tag() {
         let input = Span::new("<meta>\ntitle = Meta title\nauthor = John Doe\n</meta>\n# Markdown title\nThis is my content");
-        let (input, meta) = parse_meta_section(input).expect("to parse the meta");
+        let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
 
-        assert_eq!(vec![
+        assert!(meta.is_some());
+        assert_eq!(meta.unwrap(), vec![
             Meta { key: "title".to_string(), value: "Meta title".to_string() },
             Meta { key: "author".to_string(), value: "John Doe".to_string() },
-        ], meta);
+        ]);
 
         assert_eq!(input.fragment(), &"\n# Markdown title\nThis is my content");
+    }
+
+    #[test]
+    fn can_parse_when_no_meta_section() {
+        let input = Span::new("# Markdown title\nThis is my content");
+        let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
+
+        assert!(meta.is_none());
+        assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
+    }
+
+    #[test]
+    fn can_replace_placeholder_from_meta() {
+        let input = Span::new("<meta>\ntitle = Meta title\nauthor = John Doe\n</meta>\n# Markdown title\nThis is my content");
+        let template = Span::new("<html>\n<head>\n<title>{{ £title }}</title>\n</head>\n<body>\n<section>{{ £content }}</section>\n<p>By {{ £author }}</p>\n</body>\n</html>");
+
+        let placeholders = parse_placeholder_locations(template).expect("to parse placeholders");
+        let placeholder_keys: Vec<String> = placeholders.iter().map(|(key, _)| key.to_string()).collect();
+        let placeholders: HashMap<String, Placeholder> = placeholders.into_iter().collect();
+
+        assert_eq!(placeholders.get("title").unwrap().selection, Selection {
+            start: Marker { line: 3, offset: 21 },
+            end: Marker { line: 3, offset: 34 },
+        });
+
+        assert_eq!(placeholders.get("content").unwrap().selection, Selection {
+            start: Marker { line: 6, offset: 67 },
+            end: Marker { line: 6, offset: 82 },
+        });
+
+        assert_eq!(placeholders.get("author").unwrap().selection, Selection {
+            start: Marker { line: 7, offset: 99 },
+            end: Marker { line: 7, offset: 113 },
+        });
+
+        let (markdown, meta_values) = parse_meta_section(input).expect("to parse the meta values");
+
+        assert!(meta_values.is_some());
+        let meta_values = meta_values.unwrap_or_default();
+        assert_eq!(meta_values, vec![
+            Meta { key: "title".to_string(), value: "Meta title".to_string() },
+            Meta { key: "author".to_string(), value: "John Doe".to_string() },
+        ]);
+
+        let meta_values: HashMap<String, String> = meta_values.into_iter().map(|m| (m.key, m.value)).collect();
+
+        let mut html_doc = template.to_string();
+        for key in placeholder_keys {
+            let placeholder = placeholders.get(&key).unwrap();
+            let replacements = get_replacement(markdown, &meta_values, &key);
+
+            html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &replacements);
+        }
+
+        assert_eq!(html_doc, "<html>\n<head>\n<title>Meta title</title>\n</head>\n<body>\n<section># Markdown title\nThis is my content</section>\n<p>By John Doe</p>\n</body>\n</html>");
+    }
+
+    #[test]
+    fn can_parse_empty_string_when_no_value_found_for_placeholder() {
+        let input = Span::new("# Markdown title\nThis is my content");
+        let template = Span::new("<html>\n<head>\n<title>{{ £title }}</title>\n</head>\n<body>\n<section>{{ £content }}</section>\n<p>By {{ £author }}</p>\n</body>\n</html>");
+
+        let placeholders = parse_placeholder_locations(template).expect("to parse placeholders");
+        let placeholder_keys: Vec<String> = placeholders.iter().map(|(key, _)| key.to_string()).collect();
+        let placeholders: HashMap<String, Placeholder> = placeholders.into_iter().collect();
+
+        assert_eq!(placeholders.get("title").unwrap().selection, Selection {
+            start: Marker { line: 3, offset: 21 },
+            end: Marker { line: 3, offset: 34 },
+        });
+
+        assert_eq!(placeholders.get("content").unwrap().selection, Selection {
+            start: Marker { line: 6, offset: 67 },
+            end: Marker { line: 6, offset: 82 },
+        });
+
+        assert_eq!(placeholders.get("author").unwrap().selection, Selection {
+            start: Marker { line: 7, offset: 99 },
+            end: Marker { line: 7, offset: 113 },
+        });
+
+        let (markdown, meta_values) = parse_meta_section(input).expect("to parse the meta values");
+
+        assert!(meta_values.is_none());
+        let meta_values = meta_values.unwrap_or_default();
+        let meta_values: HashMap<String, String> = meta_values.into_iter().map(|m| (m.key, m.value)).collect();
+
+        let mut html_doc = template.to_string();
+        for key in placeholder_keys {
+            let placeholder = placeholders.get(&key).unwrap();
+            let replacements = get_replacement(markdown, &meta_values, &key);
+
+            html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &replacements);
+        }
+
+        assert_eq!(html_doc, "<html>\n<head>\n<title>Markdown title</title>\n</head>\n<body>\n<section># Markdown title\nThis is my content</section>\n<p>By </p>\n</body>\n</html>");
     }
 }

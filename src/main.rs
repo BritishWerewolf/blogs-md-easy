@@ -21,6 +21,10 @@ struct Cli {
     /// List of Markdown files ending in .md.
     #[arg(short, long, required = true, value_name = "FILES", num_args = 1..)]
     markdowns: Vec<PathBuf>,
+
+    /// Output directory, defaults to the current directory.
+    #[arg(short, long, value_name = "DIR")]
+    output_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -278,6 +282,7 @@ fn create_variables(markdown: Span, meta_values: Option<Vec<Meta>>) -> Result<Ha
         let content = markdown::to_html_with_options(&content, &markdown::Options {
             compile: markdown::CompileOptions {
                 allow_dangerous_html: true,
+                allow_dangerous_protocol: false,
                 ..Default::default()
             },
             ..Default::default()
@@ -358,7 +363,19 @@ fn main() -> Result<(), anyhow::Error> {
             html_doc = html_doc.replace(&h, &format!("\n{h}"));
         };
 
-        let output_path = markdown_url.with_extension("html");
+        // Get the output path where the `.md` is replaced with `.html`.
+        let output_path = match cli.output_dir.clone() {
+            Some(path) => path.join(markdown_url.with_extension("html").file_name().unwrap()),
+            None => markdown_url.with_extension("html"),
+        };
+
+        // Create all folders from the path.
+        if let Some(path) = output_path.parent() {
+            if !path.exists() {
+                fs::create_dir_all(path)?;
+            }
+        }
+
         fs::write(output_path, html_doc)?;
     }
 

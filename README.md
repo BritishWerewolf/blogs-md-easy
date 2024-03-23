@@ -14,16 +14,19 @@ $ cargo install blogs-md-easy
 ## Usage
 Below is the help page for the program.
 ```
-Usage: blogs-md-easy.exe --template <FILE> --markdowns <FILES>...
+Iteratively convert a collection of Markdown files into a respective HTML template.
+
+Usage: blogs-md-easy.exe [OPTIONS] --template <FILE> --markdowns <FILES>...
 
 Options:
   -t, --template <FILE>       HTML template that the Markdowns will populate
   -m, --markdowns <FILES>...  List of Markdown files ending in .md
+  -o, --output-dir <DIR>      Output directory, defaults to the Markdown's directory
   -h, --help                  Print help
   -V, --version               Print version
 ```
 
-## Template
+### Template
 Templates are `.html` files that use variables to populate the file.
 
 Variables must follow these rules:
@@ -63,7 +66,7 @@ Variables can be reused as many times as required, and will be replaced, providi
 
 Finally, the `£content` variable is automatically generated based on the entire body of the Markdown file.
 
-## Markdowns
+### Markdowns
 [Markdowns](https://daringfireball.net/projects/markdown) are simple text files that contain any text, and an optional `meta` section.
 
 The `meta` section of the Markdown file is unique to this program.  
@@ -144,12 +147,17 @@ Which would generate the following output
 </html>
 ```
 
-## Output
-All generated HTML files will be placed in the same directory as the markdown, using the same file name but with the `.html` extension.
+### Output
+All HTML files will be generated with the exact same name as the Markdown that they are converting, but with the `.html` extension.
 
-Some formatting will be applied to the generated output, but it will likely need human intervention if you want the document to be formatted correct - such as indenting.
+By default, the file will be created in the same directory as the Markdown file, however, by providing `--output-dir` (or `-o` if that's easier) the output directory can be changed.  
+This will not rename the file, but rather just place it in the specified directory.
+
+Some formatting will be applied to the generated output, but it will likely need human intervention if you want the document to be formatted correct - such as indenting.  
+Currently, a new line is placed before all headings (from `h2` to to `h6`), but nothing else is changed.
 
 ## Todo List
+- [ ] Add tag filter to prevent parsing scripts.
 - [ ] Generate for multiple templates at once.
 - [ ] Option to run against markdowns to determine if they were built off a different template.
 - [ ] Add comments to the meta section.

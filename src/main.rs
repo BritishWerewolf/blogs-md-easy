@@ -98,12 +98,10 @@ impl<'a> Default for Placeholder<'a> {
 // Parsers
 fn parse_meta_values(input: Span) -> IResult<Span, Meta> {
     // There might be an optional `£` at the start.
-    let (input, _) = multispace0(input)?;
-    let (input, _) = opt(tag("£"))(input)?;
+    let (input, _) = tuple((multispace0, opt(tag("£"))))(input)?;
 
     // Variable pattern.
     let (input, key) = recognize(tuple((
-        multispace0,
         alpha1,
         opt(many0(alt((alphanumeric1, tag("_")))))
     )))(input)?;
@@ -138,14 +136,14 @@ pub fn parse_title(input: Span) -> IResult<Span, Span> {
     Ok((input.to_owned(), title.to_owned()))
 }
 
-fn is_variable(input: char) -> bool {
-    vec!['a'..='z', 'A'..='Z', '0'..='9'].into_iter().flatten().find(|c| c == &input).is_some()
+fn is_alphabetic(input: char) -> bool {
+    vec!['a'..='z', 'A'..='Z'].into_iter().flatten().find(|c| c == &input).is_some()
 }
 
 fn parse_variable(input: Span) -> IResult<Span, Span> {
     let (input, _) = tag("£")(input)?;
     let (input, variable) = recognize(tuple((
-        take_while_m_n(1, 1, is_variable),
+        take_while_m_n(1, 1, is_alphabetic),
         many1(alt((alphanumeric1, tag("-"), tag("_")))),
     )))(input)?;
 
@@ -389,8 +387,10 @@ mod tests {
     #[test]
     fn can_parse_variable() {
         let input = Span::new("£content }}");
-        let (input, variable) = parse_variable(input).unwrap();
+        let variable = parse_variable(input);
+        assert!(variable.is_ok());
 
+        let (input, variable) = variable.unwrap();
         assert_eq!(variable.fragment(), &"content");
         assert_eq!(input.fragment(), &" }}");
     }
@@ -402,6 +402,20 @@ mod tests {
 
         assert_eq!(variable.fragment(), &"publish_date");
         assert_eq!(input.fragment(), &" }}");
+    }
+
+    #[test]
+    fn cannot_parse_variable_starting_with_number() {
+        let input = Span::new("£1_to_2");
+        let variable = parse_variable(input);
+        assert!(variable.is_err());
+    }
+
+    #[test]
+    fn cannot_parse_variable_starting_with_underscore() {
+        let input = Span::new("£_author");
+        let variable = parse_variable(input);
+        assert!(variable.is_err());
     }
 
     #[test]

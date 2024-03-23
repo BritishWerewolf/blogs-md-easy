@@ -157,12 +157,16 @@ Some formatting will be applied to the generated output, but it will likely need
 Currently, a new line is placed before all headings (from `h2` to to `h6`), but nothing else is changed.
 
 ## Todo List
+- [ ] Add if statements to render content based on a condition.
 - [ ] Add tag filter to prevent parsing scripts.
 - [ ] Add better handling for errors in meta sections.
     - For example if a key is passed without a value, then no meta values are parsed.
 - [ ] Generate for multiple templates at once.
 - [ ] Option to run against markdowns to determine if they were built off a different template.
 - [ ] Add comments to the meta section.
+- [ ] Add mutliline values to the meta section.
+- [ ] Ensure meta tags must be the same.
+    - If `:meta` is used to start the section, `:meta` should close it. Vice versa with `<meta>` and `</meta>`.
 - [ ] Formatting of the generated file.
 - [ ] Document all functions.
 - [ ] Reduce complexity of `main` function, to make it easier to test.

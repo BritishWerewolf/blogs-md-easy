@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use clap::Parser as ClapParser;
-use std::{collections::HashMap, fs, path::PathBuf};
-use nom::{branch::alt, bytes::complete::{tag, take_until, take_while_m_n}, character::complete::{alpha1, alphanumeric0, alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till}, sequence::{delimited, tuple}, IResult};
+use std::{collections::{HashMap, HashSet}, fs, path::PathBuf};
+use nom::{branch::alt, bytes::complete::{tag, take_until, take_while_m_n}, character::complete::{alpha1, alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till}, sequence::{delimited, tuple}, IResult};
 use nom_locate::LocatedSpan;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -96,7 +96,7 @@ fn parse_meta_values(input: Span) -> IResult<Span, Meta> {
     let (input, key) = recognize(tuple((
         multispace0,
         alpha1,
-        opt(many0(alt((alphanumeric0, tag("_")))))
+        opt(many0(alt((alphanumeric1, tag("_")))))
     )))(input)?;
 
     let (input, _) = tuple((multispace0, tag("="), multispace0))(input)?;
@@ -294,7 +294,7 @@ fn main() -> Result<(), anyhow::Error> {
         Err(anyhow!("Template must define 'title' and 'content' placeholders"))?;
     }
 
-    let html_docs: Vec<String> = markdowns
+    let html_docs: Result<Vec<String>, anyhow::Error> = markdowns
     .into_iter()
     .map(|markdown| {
         let markdown = Span::new(&markdown);
@@ -308,19 +308,42 @@ fn main() -> Result<(), anyhow::Error> {
         let meta_values = meta_values.unwrap_or_default();
         let meta_values: HashMap<String, String> = meta_values.into_iter().map(|m| (m.key, m.value)).collect();
 
+        // REVIEW This is a really lame system, but it checks to ensure that the
+        // markdown and template have the same keys.
+        let mut markdown_keys: HashSet<&String> = meta_values.keys().collect();
+        let content_string = "title".to_string();
+        markdown_keys.insert(&content_string);
+        let content_string = "content".to_string();
+        markdown_keys.insert(&content_string);
+        let placeholder_keys_set: HashSet<&String> = placeholder_keys.iter().collect();
+
+        if placeholder_keys_set.difference(&markdown_keys).count() > 0 {
+            return Err(anyhow!("Template must define all meta values. Missing: {:?}", placeholder_keys_set.difference(&markdown_keys)));
+        }
+        drop(markdown_keys);
+        drop(content_string);
+        drop(placeholder_keys_set);
+
         for key in &placeholder_keys {
             let placeholder = placeholders.get(key).unwrap();
             let replacements = get_replacement(markdown, &meta_values, &key);
+
             // FIXME The meta values are creating <p> tags which isn't ideal.
-            let replacements = markdown::to_html(&replacements);
+            // We don't want to apply Markdown to the
+            let replacements = if key == "content" {
+                markdown::to_html(&replacements)
+            } else {
+                replacements
+            };
 
             html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &replacements);
         }
 
-        html_doc
+        Ok(html_doc)
     })
     .collect();
 
+    let html_docs = html_docs?;
     let html_docs = markdown_urls.into_iter().zip(html_docs);
 
     for (url, html_doc) in html_docs {
@@ -344,6 +367,15 @@ mod tests {
         let (input, variable) = parse_variable(input).unwrap();
 
         assert_eq!(variable.fragment(), &"content");
+        assert_eq!(input.fragment(), &" }}");
+    }
+
+    #[test]
+    fn can_find_variable_with_underscore() {
+        let input = Span::new("£publish_date }}");
+        let (input, variable) = parse_variable(input).unwrap();
+
+        assert_eq!(variable.fragment(), &"publish_date");
         assert_eq!(input.fragment(), &" }}");
     }
 
@@ -376,6 +408,14 @@ mod tests {
         let input = Span::new("title = My Title");
         let (_, meta) = parse_meta_values(input).expect("to parse meta key-value");
         assert_eq!(meta, Meta { key: "title".to_string(), value: "My Title".to_string() });
+    }
+
+    #[test]
+    fn can_parse_meta_value_with_underscore() {
+        let input = Span::new("publish_date = 2024-01-01");
+        dbg!(input);
+        let (_, meta) = parse_meta_values(input).expect("to parse meta key-value");
+        assert_eq!(meta, Meta { key: "publish_date".to_string(), value: "2024-01-01".to_string() });
     }
 
     #[test]

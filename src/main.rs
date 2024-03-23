@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use clap::Parser as ClapParser;
 use std::{collections::HashMap, fs, path::PathBuf};
-use nom::{branch::alt, bytes::complete::{tag, take_until, take_while_m_n}, character::complete::{alpha1, alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till}, sequence::{delimited, preceded, tuple}, IResult};
+use nom::{branch::alt, bytes::complete::{tag, take_till, take_until, take_while_m_n}, character::complete::{alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many1, many_till}, sequence::{delimited, preceded, separated_pair, tuple}, IResult, Parser};
 use nom_locate::LocatedSpan;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -96,39 +96,160 @@ impl<'a> Default for Placeholder<'a> {
 
 ////////////////////////////////////////////////////////////////////////////////
 // Parsers
-fn parse_meta_values(input: Span) -> IResult<Span, Meta> {
-    // There might be an optional `£` at the start.
-    let (input, _) = tuple((multispace0, opt(tag("£"))))(input)?;
-
-    // Variable pattern.
-    let (input, key) = recognize(tuple((
-        alpha1,
-        opt(many0(alt((alphanumeric1, tag("_")))))
-    )))(input)?;
-
-    let (input, _) = tuple((multispace0, tag("="), multispace0))(input)?;
-
-    // The value of the variable, everything after the equals sign.
-    // Continue to a newline or the end of the string.
-    let (input, value) = alt((take_until("\n"), rest))(input)?;
-
-    Ok((input, Meta { key: key.trim().to_string(), value: value.trim().to_string() }))
-}
-
-pub fn parse_meta_section(input: Span) -> IResult<Span, Vec<Meta>> {
-    delimited(
-        tuple((multispace0, alt((tag(":meta"), tag("<meta>"))))),
-        many1(parse_meta_values),
-        tuple((multispace0, alt((tag(":meta"), tag("</meta>"))))),
+/// Parse a comment starting with either a `#` or `//` and ending with a newline.
+///
+/// # Example
+/// ```rust
+/// let input = Span::new("# This is a comment");
+/// let (input, meta_comment) = parse_meta_comment(input).unwrap();
+/// assert_eq!(input.fragment(), &"");
+/// assert_eq!(meta_comment.fragment(), &"This is a comment");
+/// ```
+fn parse_meta_comment(input: Span) -> IResult<Span, Span> {
+    preceded(
+        tuple((alt((tag("#"), tag("//"))), space0)),
+        parse_meta_value
     )(input)
 }
 
+/// Parse a key, that starts with an optional `£`, followed by an alphabetic
+/// character, then any number of alphanumeric characters, hyphens and
+/// underscores.
+///
+/// # Examples
+/// A valid variable, consisting of letters and underscores.
+/// ```rust
+/// let input = Span::new("£publish_date");
+/// let (_, variable) = parse_meta_key(input).unwrap();
+/// assert_eq!(variable.fragment(), &"publish_date");
+/// ```
+/// An invalid example, variables cannot start with a number.
+/// ```rust
+/// let input = Span::new("£1_to_2");
+/// let variable = parse_meta_key(input);
+/// assert!(variable.is_err());
+/// ```
+fn parse_meta_key(input: Span) -> IResult<Span, Span> {
+    // There might be an optional `£` at the start.
+    let (input, _) = opt(tag("£"))(input)?;
+
+    // Variable pattern.
+    recognize(tuple((
+        // First character is alphabetic.
+        take_while_m_n(1, 1, is_alphabetic),
+        // Then we can accept A-Z, a-z, 0-9, - and _.
+        many1(alt((alphanumeric1, tag("-"), tag("_")))),
+    )))(input)
+}
+
+/// Parse any number of characters until the end of the line or string.
+///
+/// # Example
+/// ```rust
+/// let input = Span::new("This is a value");
+/// let (_, value) = parse_meta_value(input).unwrap();
+/// assert_eq!(value.fragment(), &"This is a value");
+/// ```
+fn parse_meta_value(input: Span) -> IResult<Span, Span> {
+    // The value of the variable, everything after the equals sign.
+    // Continue to a newline or the end of the string.
+    alt((take_until("\n"), rest))(input)
+}
+
+/// Parse a key-value pair of meta_key and meta_value.
+///
+/// # Example
+/// ```rust
+/// let input = Span::new("£publish_date = 2021-01-01");
+/// let (_, meta) = parse_meta_key_value(input).unwrap();
+/// assert_eq!(meta.key, "publish_date");
+/// assert_eq!(meta.value, "2021-01-01");
+/// ```
+fn parse_meta_key_value(input: Span) -> IResult<Span, Meta> {
+    separated_pair(
+        parse_meta_key,
+        recognize(tuple((space0, tag("="), space0))),
+        parse_meta_value
+    )(input)
+    .map(|(input, (key, value))| {
+        (input, Meta {
+            key: key.trim().to_string(),
+            value: value.trim().to_string()
+        })
+    })
+}
+
+/// Parse a line of meta data. This can either be a comment or a key-value pair.
+///
+/// # Examples
+/// Parsing of a comment returns None.
+/// ```rust
+/// let input = Span::new("# This is a comment");
+/// let (_, meta) = parse_meta_line(input).unwrap();
+/// assert!(meta.is_none());
+/// ```
+/// Parsing of a key-value pair returns a Meta object.
+/// ```rust
+/// let input = Span::new("£publish_date = 2021-01-01");
+/// let (_, meta) = parse_meta_line(input).unwrap();
+/// assert!(meta.is_some());
+/// assert_eq!(meta.unwrap().key, "publish_date");
+/// assert_eq!(meta.unwrap().value, "2021-01-01");
+/// ```
+fn parse_meta_line(input: Span) -> IResult<Span, Option<Meta>> {
+    let (input, _) = space0(input)?;
+    let (input, res) = alt((
+        parse_meta_comment.map(|_| None),
+        parse_meta_key_value.map(Some),
+    ))(input)?;
+    let (input, _) = multispace0(input)?;
+    Ok((input, res))
+}
+
+/// Parse the meta section. This is either a `:meta` or `<meta>` tag surrounding
+/// a Vector of parse_meta_line.
+///
+/// # Example
+/// ```rust
+/// let input = Span::new(":meta\n// This is the published date\npublish_date = 2021-01-01\n:meta\n# Markdown title");
+/// let (input, meta) = parse_meta_section(input).unwrap();
+/// assert_eq!(meta.len(), 2);
+/// assert_eq!(meta, vec![
+///     None,
+///     Some(Meta { key: "publish_date".to_string(), value: "2021-01-01".to_string() }),
+/// ]);
+/// assert_eq!(input.fragment(), &"# Markdown title");
+/// ```
+pub fn parse_meta_section(input: Span) -> IResult<Span, Vec<Option<Meta>>> {
+    delimited(
+        tuple((multispace0, alt((tag(":meta"), tag("<meta>"))), multispace0)),
+        many1(parse_meta_line),
+        tuple((multispace0, alt((tag(":meta"), tag("</meta>"))), multispace0)),
+    )(input)
+}
+
+/// Parse the title of the document. This is either a Markdown title or an HTML
+/// heading with the `h1` tag.
+///
+/// # Examples
+/// Using a Markdown heading.
+/// ```rust
+/// let input = Span::new("# This is the title");
+/// let (_, title) = parse_title(input).unwrap();
+/// assert_eq!(title.fragment(), &"This is the title");
+/// ```
+/// Using an HTML heading.
+/// ```rust
+/// let input = Span::new("<h1>This is the title</h1>");
+/// let (_, title) = parse_title(input).unwrap();
+/// assert_eq!(title.fragment(), &"This is the title");
+/// ```
 pub fn parse_title(input: Span) -> IResult<Span, Span> {
     let (input, _) = multispace0(input)?;
 
     let (input, title) = alt((
         // Either a Markdown title...
-        preceded(tuple((tag("#"), space0)), alt((take_until("\r\n"), take_until("\n")))),
+        preceded(tuple((tag("#"), space0)), take_till(|c| c == '\n' || c == '\r')),
         // ... or an HTML title.
         delimited(tag("<h1>"), take_until("</h1>"), tag("</h1>"))
     ))(input)?;
@@ -136,10 +257,35 @@ pub fn parse_title(input: Span) -> IResult<Span, Span> {
     Ok((input.to_owned(), title.to_owned()))
 }
 
+/// Rewrite of the nom::is_alphabetic function that takes a char instead.
+///
+/// # Examples
+/// ```rust
+/// assert!(is_alphabetic('a'));
+/// assert!(is_alphabetic('A'));
+/// assert!(!is_alphabetic('1'));
+/// assert!(!is_alphabetic('-'));
+/// ```
 fn is_alphabetic(input: char) -> bool {
     vec!['a'..='z', 'A'..='Z'].into_iter().flatten().find(|c| c == &input).is_some()
 }
 
+/// Parse a template placeholder variable. This is a `£` followed by a variable
+/// name.
+///
+/// # Examples
+/// Variables must start with a `£`.
+/// ```rust
+/// let input = Span::new("£variable");
+/// let (_, variable) = parse_variable(input).unwrap();
+/// assert_eq!(variable.fragment(), &"variable");
+/// ```
+/// Failing to start with a `£` will return an error.
+/// ```rust
+/// let input = Span::new("variable");
+/// let variable = parse_variable(input);
+/// assert!(variable.is_err());
+/// ```
 fn parse_variable(input: Span) -> IResult<Span, Span> {
     let (input, _) = tag("£")(input)?;
     let (input, variable) = recognize(tuple((
@@ -150,6 +296,24 @@ fn parse_variable(input: Span) -> IResult<Span, Span> {
     Ok((input, variable))
 }
 
+/// Parse a template placeholder. This is a variable name, surrounded by `{{`
+/// and `}}`.
+/// Whitespace is optional.
+///
+/// # Examples
+/// A simple placeholder.
+/// ```rust
+/// let input = Span::new("{{ variable }}");
+/// let (_, placeholder) = parse_placeholder(input).unwrap();
+/// assert_eq!(placeholder.fragment(), &"{{ variable }}");
+/// ```
+///
+/// A placeholder without whitespace.
+/// ```rust
+/// let input = Span::new("{{variable}}");
+/// let (_, placeholder) = parse_placeholder(input).unwrap();
+/// assert_eq!(placeholder.fragment(), &"{{variable}}");
+/// ```
 fn parse_placeholder(input: Span) -> IResult<Span, Span> {
     recognize(tuple((
         tuple((tag("{{"), multispace0)),
@@ -256,14 +420,17 @@ fn replace_substring(original: &str, start: usize, end: usize, replacement: &str
 /// assert_eq!(variables.get("author").unwrap(), "John Doe");
 /// assert_eq!(variables.get("content").unwrap(), "# Markdown title\nContent paragraph");
 /// ```
-fn create_variables(markdown: Span, meta_values: Option<Vec<Meta>>) -> Result<HashMap<String, String>, anyhow::Error> {
-    let mut variables: HashMap<String, String> = match meta_values {
-        Some(meta_values) => meta_values
-            .iter()
-            .map(|mv| (mv.key.to_owned(), mv.value.to_owned()))
-            .collect(),
-        None => Vec::new().into_iter().collect(),
-    };
+fn create_variables(markdown: Span, meta_values: Vec<Option<Meta>>) -> Result<HashMap<String, String>, anyhow::Error> {
+    let mut variables: HashMap<String, String> = meta_values
+        .into_iter()
+        .filter_map(|meta| {
+            if meta.is_none() {
+                return None;
+            }
+            let meta = meta.unwrap();
+            Some((meta.key.to_owned(), meta.value.to_owned()))
+        })
+        .collect();
 
     // Make sure that we have a title and content variable.
     if !variables.contains_key("title") {
@@ -327,7 +494,7 @@ fn main() -> Result<(), anyhow::Error> {
 
         // Parse the meta values, and combine them with the title and content of
         // the markdown file.
-        let (markdown, meta_values) = opt(parse_meta_section)(markdown).unwrap_or((markdown, Some(vec![])));
+        let (markdown, meta_values) = parse_meta_section(markdown).unwrap_or((markdown, vec![]));
         let variables: HashMap<String, String> = create_variables(markdown, meta_values)?;
 
         // Check for unused variables.
@@ -405,6 +572,26 @@ mod tests {
     }
 
     #[test]
+    fn can_parse_meta_comment_slash() {
+        let input = Span::new("// This is a comment");
+        let (input, meta_comment) = parse_meta_comment(input).expect("to parse comment");
+        dbg!(meta_comment);
+
+        assert_eq!(input.fragment(), &"");
+        assert_eq!(meta_comment.fragment(), &"This is a comment");
+    }
+
+    #[test]
+    fn can_parse_meta_comment_hash() {
+        let input = Span::new("# This is a comment");
+        let (input, meta_comment) = parse_meta_comment(input).expect("to parse comment");
+        dbg!(meta_comment);
+
+        assert_eq!(input.fragment(), &"");
+        assert_eq!(meta_comment.fragment(), &"This is a comment");
+    }
+
+    #[test]
     fn cannot_parse_variable_starting_with_number() {
         let input = Span::new("£1_to_2");
         let variable = parse_variable(input);
@@ -458,7 +645,7 @@ mod tests {
     #[test]
     fn can_parse_meta_value() {
         let input = Span::new("title = My Title");
-        let (_, meta) = parse_meta_values(input).expect("to parse meta key-value");
+        let (_, meta) = parse_meta_key_value(input).expect("to parse meta key-value");
         assert_eq!(meta, Meta { key: "title".to_string(), value: "My Title".to_string() });
     }
 
@@ -466,7 +653,7 @@ mod tests {
     fn can_parse_meta_value_with_underscore() {
         let input = Span::new("publish_date = 2024-01-01");
         dbg!(input);
-        let (_, meta) = parse_meta_values(input).expect("to parse meta key-value");
+        let (_, meta) = parse_meta_key_value(input).expect("to parse meta key-value");
         assert_eq!(meta, Meta { key: "publish_date".to_string(), value: "2024-01-01".to_string() });
     }
 
@@ -474,7 +661,7 @@ mod tests {
     fn can_parse_meta_value_with_prefix() {
         let input = Span::new("£publish_date = 2024-01-01");
         dbg!(input);
-        let (_, meta) = parse_meta_values(input).expect("to parse meta key-value");
+        let (_, meta) = parse_meta_key_value(input).expect("to parse meta key-value");
         assert_eq!(meta, Meta { key: "publish_date".to_string(), value: "2024-01-01".to_string() });
     }
 
@@ -484,11 +671,11 @@ mod tests {
         let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
 
         assert_eq!(meta, vec![
-            Meta { key: "title".to_string(), value: "Meta title".to_string() },
-            Meta { key: "author".to_string(), value: "John Doe".to_string() },
+            Some(Meta { key: "title".to_string(), value: "Meta title".to_string() }),
+            Some(Meta { key: "author".to_string(), value: "John Doe".to_string() }),
         ]);
 
-        assert_eq!(input.fragment(), &"\n# Markdown title\nThis is my content");
+        assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
     }
 
     #[test]
@@ -497,11 +684,11 @@ mod tests {
         let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
 
         assert_eq!(meta, vec![
-            Meta { key: "title".to_string(), value: "Meta title".to_string() },
-            Meta { key: "author".to_string(), value: "John Doe".to_string() },
+            Some(Meta { key: "title".to_string(), value: "Meta title".to_string() }),
+            Some(Meta { key: "author".to_string(), value: "John Doe".to_string() }),
         ]);
 
-        assert_eq!(input.fragment(), &"\n# Markdown title\nThis is my content");
+        assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
     }
 
     #[test]
@@ -510,6 +697,24 @@ mod tests {
         let (input, meta) = opt(parse_meta_section)(input).expect("to parse the meta values");
 
         assert!(meta.is_none());
+        assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
+    }
+
+    #[test]
+    fn can_parse_meta_section_with_comments() {
+        let input = Span::new(":meta\n// This is an author\nauthor = John Doe\n# This is the publish date\npublish_date = 2024-01-01\n:meta\n# Markdown title\nThis is my content");
+        let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
+
+        // We get None, Some, None, Some.
+        assert!(meta.len() == 4);
+        // Then filter and unwrap.
+        let meta: Vec<Meta> = meta.into_iter().filter_map(|m| m).collect();
+
+        assert_eq!(meta, vec![
+            Meta { key: "author".to_string(), value: "John Doe".to_string() },
+            Meta { key: "publish_date".to_string(), value: "2024-01-01".to_string() },
+        ]);
+
         assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
     }
 
@@ -548,10 +753,9 @@ mod tests {
         // Unwrap, to peek the values, then re-wrap.
         let meta_values = meta_values.unwrap_or_default();
         assert_eq!(meta_values, vec![
-            Meta { key: "title".to_string(), value: "Meta title".to_string() },
-            Meta { key: "author".to_string(), value: "John Doe".to_string() },
+            Some(Meta { key: "title".to_string(), value: "Meta title".to_string() }),
+            Some(Meta { key: "author".to_string(), value: "John Doe".to_string() }),
         ]);
-        let meta_values = Some(meta_values);
         let variables: HashMap<String, String> = create_variables(markdown, meta_values).expect("to create variables");
 
         let mut html_doc = template.to_string();

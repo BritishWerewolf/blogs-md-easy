@@ -147,6 +147,19 @@ Which would generate the following output
 </html>
 ```
 
+#### Comments
+It's possible to add comments to the meta section, by starting a line with either `#` or `//`.  
+Comments will be parsed and the leading comment prefix will be removed, however this is superfluous as they will be replaced with None during parsing, and susequently removed.
+```md
+:meta
+// This is a comment.
+author = John Doe
+# This is another type of comment
+description = This will appear in Search Engines.
+:meta
+```
+The above meta key-values that would be parsed would be `author` and `description`, with the values being `John Doe` and `This will appear in Search Engines.` respectively.
+
 ### Output
 All HTML files will be generated with the exact same name as the Markdown that they are converting, but with the `.html` extension.
 
@@ -161,9 +174,11 @@ Currently, a new line is placed before all headings (from `h2` to to `h6`), but 
 - [ ] Add tag filter to prevent parsing scripts.
 - [ ] Add better handling for errors in meta sections.
     - For example if a key is passed without a value, then no meta values are parsed.
+- [ ] Ability to truncate to either characters or tags.
+    - Useful for creating to short templates.
 - [ ] Generate for multiple templates at once.
 - [ ] Option to run against markdowns to determine if they were built off a different template.
-- [ ] Add comments to the meta section.
+- [x] Add comments to the meta section.
 - [ ] Add mutliline values to the meta section.
 - [ ] Ensure meta tags must be the same.
     - If `:meta` is used to start the section, `:meta` should close it. Vice versa with `<meta>` and `</meta>`.

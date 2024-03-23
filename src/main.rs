@@ -117,12 +117,12 @@ fn parse_meta_values(input: Span) -> IResult<Span, Meta> {
     Ok((input, Meta { key: key.trim().to_string(), value: value.trim().to_string() }))
 }
 
-pub fn parse_meta_section(input: Span) -> IResult<Span, Option<Vec<Meta>>> {
-    opt(delimited(
+pub fn parse_meta_section(input: Span) -> IResult<Span, Vec<Meta>> {
+    delimited(
         tuple((multispace0, alt((tag(":meta"), tag("<meta>"))))),
         many1(parse_meta_values),
         tuple((multispace0, alt((tag(":meta"), tag("</meta>"))))),
-    ))(input)
+    )(input)
 }
 
 pub fn parse_title(input: Span) -> IResult<Span, Span> {
@@ -329,10 +329,7 @@ fn main() -> Result<(), anyhow::Error> {
 
         // Parse the meta values, and combine them with the title and content of
         // the markdown file.
-        let (markdown, meta_values) = parse_meta_section(markdown).unwrap_or((markdown, Some(vec![])));
-        if meta_values.is_none() {
-            return Err(anyhow!("Failed to parse meta values in '{}'", markdown_url.to_string_lossy()));
-        }
+        let (markdown, meta_values) = opt(parse_meta_section)(markdown).unwrap_or((markdown, Some(vec![])));
         let variables: HashMap<String, String> = create_variables(markdown, meta_values)?;
 
         // Check for unused variables.
@@ -472,8 +469,7 @@ mod tests {
         let input = Span::new(":meta\ntitle = Meta title\nauthor = John Doe\n:meta\n# Markdown title\nThis is my content");
         let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
 
-        assert!(meta.is_some());
-        assert_eq!(meta.unwrap(), vec![
+        assert_eq!(meta, vec![
             Meta { key: "title".to_string(), value: "Meta title".to_string() },
             Meta { key: "author".to_string(), value: "John Doe".to_string() },
         ]);
@@ -486,8 +482,7 @@ mod tests {
         let input = Span::new("<meta>\ntitle = Meta title\nauthor = John Doe\n</meta>\n# Markdown title\nThis is my content");
         let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
 
-        assert!(meta.is_some());
-        assert_eq!(meta.unwrap(), vec![
+        assert_eq!(meta, vec![
             Meta { key: "title".to_string(), value: "Meta title".to_string() },
             Meta { key: "author".to_string(), value: "John Doe".to_string() },
         ]);
@@ -498,7 +493,7 @@ mod tests {
     #[test]
     fn can_parse_when_no_meta_section() {
         let input = Span::new("# Markdown title\nThis is my content");
-        let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
+        let (input, meta) = opt(parse_meta_section)(input).expect("to parse the meta values");
 
         assert!(meta.is_none());
         assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
@@ -533,7 +528,7 @@ mod tests {
             end: Marker { line: 7, offset: 105 },
         });
 
-        let (markdown, meta_values) = parse_meta_section(input).unwrap_or((input, Some(vec![])));
+        let (markdown, meta_values) = opt(parse_meta_section)(input).unwrap_or((input, Some(vec![])));
         assert!(meta_values.is_some());
 
         // Unwrap, to peek the values, then re-wrap.

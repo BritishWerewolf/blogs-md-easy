@@ -158,6 +158,8 @@ Currently, a new line is placed before all headings (from `h2` to to `h6`), but 
 
 ## Todo List
 - [ ] Add tag filter to prevent parsing scripts.
+- [ ] Add better handling for errors in meta sections.
+    - For example if a key is passed without a value, then no meta values are parsed.
 - [ ] Generate for multiple templates at once.
 - [ ] Option to run against markdowns to determine if they were built off a different template.
 - [ ] Add comments to the meta section.

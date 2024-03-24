@@ -183,5 +183,5 @@ Currently, a new line is placed before all headings (from `h2` to to `h6`), but 
 - [ ] Ensure meta tags must be the same.
     - If `:meta` is used to start the section, `:meta` should close it. Vice versa with `<meta>` and `</meta>`.
 - [ ] Formatting of the generated file.
-- [ ] Document all functions.
+- [x] Document all functions.
 - [ ] Reduce complexity of `main` function, to make it easier to test.

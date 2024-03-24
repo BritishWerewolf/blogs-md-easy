@@ -310,9 +310,9 @@ fn parse_variable(input: Span) -> IResult<Span, Span> {
 ///
 /// A placeholder without whitespace.
 /// ```rust
-/// let input = Span::new("{{variable}}");
+/// let input = Span::new("{{£variable}}");
 /// let (_, placeholder) = parse_placeholder(input).unwrap();
-/// assert_eq!(placeholder.fragment(), &"{{variable}}");
+/// assert_eq!(placeholder.fragment(), &"{{£variable}}");
 /// ```
 fn parse_placeholder(input: Span) -> IResult<Span, Span> {
     recognize(tuple((
@@ -322,17 +322,34 @@ fn parse_placeholder(input: Span) -> IResult<Span, Span> {
     )))(input)
 }
 
+/// Parse a template consuming - and discarding - any character, and stopping at
+/// the first matched placeholder, returning it in full.
+///
+/// # Example
+/// ```rust
+/// let input = Span::new("Hello, {{ £name }}!");
+/// let (input, placeholders) = take_till_placeholder(input).expect("to parse input");
+/// assert_eq!(input.fragment(), &"!");
+/// assert_eq!(placeholders.fragment(), &"{{ £name }}");
+/// ```
 fn take_till_placeholder(input: Span) -> IResult<Span, Span> {
-    let (input, (_, placeholder)) = many_till(anychar, recognize(delimited(
-        tuple((tag("{{"), multispace0)),
-        parse_variable,
-        tuple((multispace0, tag("}}"))),
-    )))(input)?;
-
-    Ok((input, placeholder))
+    many_till(anychar, parse_placeholder)(input)
+    // Map to remove the multiple characters.
+    .map(|(input, (_, placeholder))| (input, placeholder))
 }
 
-/// This will consume the entire string!
+/// Consume an entire string, and return a Vector of a tuple; where the first
+/// element is a String of the variable name, and the second element is the
+/// Placeholder.
+///
+/// # Example
+/// ```rust
+/// let input = Span::new("Hello, {{ £name }}!");
+/// let placeholders = parse_placeholder_locations(input).unwrap();
+/// assert_eq!(placeholders.len(), 1);
+/// assert_eq!(placeholders[0].0, "name");
+/// assert_eq!(placeholders[0].1.span.fragment(), &"{{ £name }}");
+/// ```
 fn parse_placeholder_locations(input: Span) -> Result<Vec<(String, Placeholder)>, anyhow::Error> {
     let mut old_input = input;
     let default_span = Span::new("");
@@ -414,11 +431,11 @@ fn replace_substring(original: &str, start: usize, end: usize, replacement: &str
 /// # Example
 /// ```
 /// let markdown = Span::new(":meta\nauthor = John Doe\n:meta\n# Markdown title\nContent paragraph");
-/// let meta_values = parse_meta_section(markdown).unwrap_or((markdown, Some(vec![])));
-/// let variables = create_variables(markdown, Some(meta_values));
+/// let (markdown, meta_values) = parse_meta_section(markdown).unwrap_or((markdown, vec![]));
+/// let variables = create_variables(markdown, meta_values).expect("to create variables");
 /// assert_eq!(variables.get("title").unwrap(), "Markdown title");
 /// assert_eq!(variables.get("author").unwrap(), "John Doe");
-/// assert_eq!(variables.get("content").unwrap(), "# Markdown title\nContent paragraph");
+/// assert_eq!(variables.get("content").unwrap(), "<h1>Markdown title</h1>\n<p>Content paragraph</p>");
 /// ```
 fn create_variables(markdown: Span, meta_values: Vec<Option<Meta>>) -> Result<HashMap<String, String>, anyhow::Error> {
     let mut variables: HashMap<String, String> = meta_values
@@ -716,6 +733,34 @@ mod tests {
         ]);
 
         assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
+    }
+
+    #[test]
+    fn can_parse_placeholders() {
+        let input = Span::new("<h1>{{ £title }}\n<p>{{ £content }}");
+        let placeholders = parse_placeholder_locations(input).expect("to parse placeholders");
+
+        // Placeholders are returned in reverse order because we replace from
+        // the end of the string.
+        // This is to ensure that offsets are not skewed with each replacement.
+        assert_eq!(placeholders.len(), 2);
+        assert_eq!(placeholders.iter().map(|(k, _)| k).collect::<Vec<&String>>(), vec![
+            "content",
+            "title",
+        ]);
+
+        assert_eq!(placeholders[0].1.span.location_offset(), 21);
+        assert_eq!(placeholders[0].1.span.fragment(), &"{{ £content }}");
+
+        assert_eq!(placeholders[1].1.span.location_offset(), 4);
+        assert_eq!(placeholders[1].1.span.fragment(), &"{{ £title }}");
+    }
+
+    #[test]
+    fn can_parse_when_no_placeholders() {
+        let input = Span::new("<h1>My Title\n<p>My content");
+        let placeholders = parse_placeholder_locations(input).expect("to parse empty list");
+        assert_eq!(placeholders, vec![]);
     }
 
     #[test]

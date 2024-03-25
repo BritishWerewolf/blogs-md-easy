@@ -70,8 +70,9 @@ impl Selection {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct Placeholder<'a> {
+    name: String,
     span: Span<'a>,
     selection: Selection,
 }
@@ -79,6 +80,7 @@ struct Placeholder<'a> {
 impl<'a> Placeholder<'a> {
     fn new(span: Span<'a>) -> Self {
         Self {
+            name: span.fragment().replace("{", "").replace("£", "").replace("}", "").trim().to_string(),
             span: span,
             selection: Selection::new(span),
         }
@@ -88,6 +90,7 @@ impl<'a> Placeholder<'a> {
 impl<'a> Default for Placeholder<'a> {
     fn default() -> Self {
         Self {
+            name: String::default(),
             span: Span::new(""),
             selection: Selection::default(),
         }
@@ -303,9 +306,9 @@ fn parse_variable(input: Span) -> IResult<Span, Span> {
 /// # Examples
 /// A simple placeholder.
 /// ```rust
-/// let input = Span::new("{{ variable }}");
+/// let input = Span::new("{{ £variable }}");
 /// let (_, placeholder) = parse_placeholder(input).unwrap();
-/// assert_eq!(placeholder.fragment(), &"{{ variable }}");
+/// assert_eq!(placeholder.fragment(), &"{{ £variable }}");
 /// ```
 ///
 /// A placeholder without whitespace.
@@ -350,11 +353,11 @@ fn take_till_placeholder(input: Span) -> IResult<Span, Span> {
 /// assert_eq!(placeholders[0].0, "name");
 /// assert_eq!(placeholders[0].1.span.fragment(), &"{{ £name }}");
 /// ```
-fn parse_placeholder_locations(input: Span) -> Result<Vec<(String, Placeholder)>, anyhow::Error> {
+fn parse_placeholder_locations(input: Span) -> Result<Vec<Placeholder>, anyhow::Error> {
     let mut old_input = input;
     let default_span = Span::new("");
     let mut placeholder = Span::new("start");
-    let mut placeholders: Vec<(String, Placeholder)> = Vec::new();
+    let mut placeholders: Vec<Placeholder> = Vec::new();
 
     while placeholder != default_span {
         let (new_input, new_placeholder) = take_till_placeholder(old_input).unwrap_or((default_span, default_span));
@@ -362,14 +365,7 @@ fn parse_placeholder_locations(input: Span) -> Result<Vec<(String, Placeholder)>
         // Do another check because of the unwrap_or.
         if new_placeholder != default_span {
             placeholders.push(
-                parse_placeholder(new_placeholder)
-                .and_then(|(_, key)| {
-                    Ok(key.replace("{", "").replace("£", "").replace("}", "").trim().to_string())
-                })
-                .and_then(|key| {
-                    Ok((key, Placeholder::new(new_placeholder)))
-                })
-                .expect("variable to be extracted and added to placeholders")
+                Placeholder::new(new_placeholder)
             );
         }
 
@@ -379,7 +375,7 @@ fn parse_placeholder_locations(input: Span) -> Result<Vec<(String, Placeholder)>
 
     // Sort in reverse so that when we replace each placeholder, the offsets do
     // not affect offsets after this point.
-    placeholders.sort_by(|a, b| b.1.span.location_offset().cmp(&a.1.span.location_offset()));
+    placeholders.sort_by(|a, b| b.span.location_offset().cmp(&a.span.location_offset()));
 
     Ok(placeholders)
 }
@@ -403,7 +399,7 @@ fn parse_placeholder_locations(input: Span) -> Result<Vec<(String, Placeholder)>
 /// # Example
 ///
 /// ```
-/// let original = "Hello, world!";
+/// let original = "Hello, World!";
 /// let start = 7;
 /// let end = 12;
 /// let replacement = "Rust";
@@ -441,19 +437,18 @@ fn create_variables(markdown: Span, meta_values: Vec<Option<Meta>>) -> Result<Ha
     let mut variables: HashMap<String, String> = meta_values
         .into_iter()
         .filter_map(|meta| {
-            if meta.is_none() {
-                return None;
+            if let Some(meta) = meta {
+                Some((meta.key.to_owned(), meta.value.to_owned()))
+            } else {
+                None
             }
-            let meta = meta.unwrap();
-            Some((meta.key.to_owned(), meta.value.to_owned()))
         })
         .collect();
 
     // Make sure that we have a title and content variable.
     if !variables.contains_key("title") {
-        let title_res = parse_title(markdown);
-        if title_res.is_ok() {
-            let (_, title) = title_res.unwrap();
+        if let Ok(title) = parse_title(markdown) {
+            let (_, title) = title;
             variables.insert("title".to_string(), title.to_string());
         } else {
             return Err(anyhow!("Missing title"));
@@ -503,7 +498,7 @@ fn main() -> Result<(), anyhow::Error> {
 
     // All placeholders that are present in the template.
     let mut placeholders = parse_placeholder_locations(template)?;
-    placeholders.sort_by(|a, b| b.1.span.location_offset().cmp(&a.1.span.location_offset()));
+    placeholders.sort_by(|a, b| b.span.location_offset().cmp(&a.span.location_offset()));
 
     for (markdown, markdown_url) in &markdowns {
         let markdown = Span::new(markdown);
@@ -515,7 +510,7 @@ fn main() -> Result<(), anyhow::Error> {
         let variables: HashMap<String, String> = create_variables(markdown, meta_values)?;
 
         // Check for unused variables.
-        let placeholder_keys = placeholders.iter().map(|(key, _)| key).collect::<Vec<&String>>();
+        let placeholder_keys = placeholders.iter().map(|p| &p.name).collect::<Vec<&String>>();
         let unused_variables = variables.keys().filter(|key| !placeholder_keys.contains(key)).collect::<Vec<&String>>();
         if !unused_variables.is_empty() {
             println!(
@@ -526,12 +521,12 @@ fn main() -> Result<(), anyhow::Error> {
             );
         }
 
-        for (key, placeholder) in &placeholders {
-            if let Some(variable) = variables.get(key) {
+        for placeholder in &placeholders {
+            if let Some(variable) = variables.get(&placeholder.name) {
                 html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &variable);
             } else {
                 let url = markdown_url.to_str().unwrap_or_default();
-                return Err(anyhow!("Missing variable '{}' in markdown '{}'.", key, url));
+                return Err(anyhow!("Missing variable '{}' in markdown '{}'.", &placeholder.name, url));
             }
         }
 
@@ -744,16 +739,16 @@ mod tests {
         // the end of the string.
         // This is to ensure that offsets are not skewed with each replacement.
         assert_eq!(placeholders.len(), 2);
-        assert_eq!(placeholders.iter().map(|(k, _)| k).collect::<Vec<&String>>(), vec![
+        assert_eq!(placeholders.iter().map(|p| &p.name).collect::<Vec<&String>>(), vec![
             "content",
             "title",
         ]);
 
-        assert_eq!(placeholders[0].1.span.location_offset(), 21);
-        assert_eq!(placeholders[0].1.span.fragment(), &"{{ £content }}");
+        assert_eq!(placeholders[0].span.location_offset(), 21);
+        assert_eq!(placeholders[0].span.fragment(), &"{{ £content }}");
 
-        assert_eq!(placeholders[1].1.span.location_offset(), 4);
-        assert_eq!(placeholders[1].1.span.fragment(), &"{{ £title }}");
+        assert_eq!(placeholders[1].span.location_offset(), 4);
+        assert_eq!(placeholders[1].span.fragment(), &"{{ £title }}");
     }
 
     #[test]
@@ -769,25 +764,25 @@ mod tests {
         let template = Span::new("<html>\n<head>\n<title>{{ £title }}</title>\n</head>\n<body>\n<h1>{{ £title }}</h1>\n<small>By {{ £author }}</small>\n<section>{{ £content }}</section>\n</body>\n</html>");
 
         let mut placeholders = parse_placeholder_locations(template).expect("to parse placeholders");
-        placeholders.sort_by(|a, b| b.1.span.location_offset().cmp(&a.1.span.location_offset()));
+        placeholders.sort_by(|a, b| b.span.location_offset().cmp(&a.span.location_offset()));
 
-        let mut placeholder_title_iter = placeholders.iter().filter(|p| &p.0 == "title");
+        let mut placeholder_title_iter = placeholders.iter().filter(|p| &p.name == "title");
         assert!(placeholder_title_iter.clone().count() == 2);
-        assert_eq!(placeholder_title_iter.next().expect("title to exist").1.selection, Selection {
+        assert_eq!(placeholder_title_iter.next().expect("title to exist").selection, Selection {
             start: Marker { line: 6, offset: 62 },
             end: Marker { line: 6, offset: 75 },
         });
-        assert_eq!(placeholder_title_iter.next().expect("title to exist").1.selection, Selection {
+        assert_eq!(placeholder_title_iter.next().expect("title to exist").selection, Selection {
             start: Marker { line: 3, offset: 21 },
             end: Marker { line: 3, offset: 34 },
         });
 
-        assert_eq!(placeholders.iter().filter(|p| &p.0 == "content").next().expect("content to exist").1.selection, Selection {
+        assert_eq!(placeholders.iter().filter(|p| &p.name == "content").next().expect("content to exist").selection, Selection {
             start: Marker { line: 8, offset: 123 },
             end: Marker { line: 8, offset: 138 },
         });
 
-        assert_eq!(placeholders.iter().filter(|p| &p.0 == "author").next().expect("author to exist").1.selection, Selection {
+        assert_eq!(placeholders.iter().filter(|p| &p.name == "author").next().expect("author to exist").selection, Selection {
             start: Marker { line: 7, offset: 91 },
             end: Marker { line: 7, offset: 105 },
         });
@@ -804,8 +799,8 @@ mod tests {
         let variables: HashMap<String, String> = create_variables(markdown, meta_values).expect("to create variables");
 
         let mut html_doc = template.to_string();
-        for (key, placeholder) in &placeholders {
-            if let Some(variable) = variables.get(key) {
+        for placeholder in &placeholders {
+            if let Some(variable) = variables.get(&placeholder.name) {
                 html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &variable);
             } else {
                 assert!(false);

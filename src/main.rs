@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use clap::Parser as ClapParser;
 use std::{collections::HashMap, fs, path::PathBuf};
-use nom::{branch::alt, bytes::complete::{tag, take_till, take_until, take_while_m_n}, character::complete::{alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many1, many_till}, sequence::{delimited, preceded, separated_pair, tuple}, IResult, Parser};
+use nom::{branch::alt, bytes::complete::{tag, take_till, take_until, take_while_m_n}, character::complete::{alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till}, sequence::{delimited, preceded, separated_pair, terminated, tuple}, IResult, Parser};
 use nom_locate::LocatedSpan;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -99,6 +99,16 @@ impl<'a> Default for Placeholder<'a> {
 
 ////////////////////////////////////////////////////////////////////////////////
 // Parsers
+/// Parse any character until the end of the line.
+/// This will return all characters, except the newline which will be consumed
+/// and discarded.
+fn parse_until_eol(input: Span) -> IResult<Span, Span> {
+    terminated(
+        alt((take_until("\n"), rest)),
+        alt((tag("\n"), tag(""))),
+    )(input)
+}
+
 /// Parse a comment starting with either a `#` or `//` and ending with a newline.
 ///
 /// # Example
@@ -110,8 +120,9 @@ impl<'a> Default for Placeholder<'a> {
 /// ```
 fn parse_meta_comment(input: Span) -> IResult<Span, Span> {
     preceded(
+        // All comments start with either a `#` or `//` followed by a space(s).
         tuple((alt((tag("#"), tag("//"))), space0)),
-        parse_meta_value
+        parse_until_eol,
     )(input)
 }
 
@@ -133,16 +144,10 @@ fn parse_meta_comment(input: Span) -> IResult<Span, Span> {
 /// assert!(variable.is_err());
 /// ```
 fn parse_meta_key(input: Span) -> IResult<Span, Span> {
-    // There might be an optional `£` at the start.
-    let (input, _) = opt(tag("£"))(input)?;
-
-    // Variable pattern.
-    recognize(tuple((
-        // First character is alphabetic.
-        take_while_m_n(1, 1, is_alphabetic),
-        // Then we can accept A-Z, a-z, 0-9, - and _.
-        many1(alt((alphanumeric1, tag("-"), tag("_")))),
-    )))(input)
+    preceded(
+        opt(tag("£")),
+        parse_variable_name
+    )(input)
 }
 
 /// Parse any number of characters until the end of the line or string.
@@ -156,7 +161,7 @@ fn parse_meta_key(input: Span) -> IResult<Span, Span> {
 fn parse_meta_value(input: Span) -> IResult<Span, Span> {
     // The value of the variable, everything after the equals sign.
     // Continue to a newline or the end of the string.
-    alt((take_until("\n"), rest))(input)
+    parse_until_eol(input)
 }
 
 /// Parse a key-value pair of meta_key and meta_value.
@@ -273,6 +278,29 @@ fn is_alphabetic(input: char) -> bool {
     vec!['a'..='z', 'A'..='Z'].into_iter().flatten().find(|c| c == &input).is_some()
 }
 
+/// Variable names must start with an alphabetic character, then any number of
+/// alphanumeric characters, hyphens and underscores.
+///
+/// # Examples
+/// Variables can consist of letters and underscores.
+/// ```rust
+/// let input = Span::new("publish_date");
+/// let (_, variable) = parse_variable_name(input).unwrap();
+/// assert_eq!(variable.fragment(), &"publish_date");
+/// ```
+/// Variables cannot start with a number or underscore.
+/// ```rust
+/// let input = Span::new("1_to_2");
+/// let variable = parse_variable_name(input);
+/// assert!(variable.is_err());
+/// ```
+fn parse_variable_name(input: Span) -> IResult<Span, Span> {
+    recognize(tuple((
+        take_while_m_n(1, 1, is_alphabetic),
+        many0(alt((alphanumeric1, tag("-"), tag("_")))),
+    )))(input)
+}
+
 /// Parse a template placeholder variable. This is a `£` followed by a variable
 /// name.
 ///
@@ -290,13 +318,10 @@ fn is_alphabetic(input: char) -> bool {
 /// assert!(variable.is_err());
 /// ```
 fn parse_variable(input: Span) -> IResult<Span, Span> {
-    let (input, _) = tag("£")(input)?;
-    let (input, variable) = recognize(tuple((
-        take_while_m_n(1, 1, is_alphabetic),
-        many1(alt((alphanumeric1, tag("-"), tag("_")))),
-    )))(input)?;
-
-    Ok((input, variable))
+    preceded(
+        tag("£"),
+        parse_variable_name
+    )(input)
 }
 
 /// Parse a template placeholder. This is a variable name, surrounded by `{{`
@@ -564,6 +589,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn can_parse_until_eol() {
+        let input = Span::new("This is the first line\nThis is the second line.");
+        let (input, line) = parse_until_eol(input).expect("to parse line");
+        assert_eq!(line.fragment(), &"This is the first line");
+        // Notice that line has consumed the newline, but it is not returned.
+        assert_eq!(input.fragment(), &"This is the second line.");
+
+        let (input, line) = parse_until_eol(input).expect("to parse line");
+        assert_eq!(line.fragment(), &"This is the second line.");
+        // This also works even if there is no newline character.
+        assert_eq!(input.fragment(), &"");
+    }
+
+    #[test]
     fn can_parse_variable() {
         let input = Span::new("£content }}");
         let variable = parse_variable(input);
@@ -575,32 +614,23 @@ mod tests {
     }
 
     #[test]
+    fn can_parse_variable_with_one_letter() {
+        let input = Span::new("£a }}");
+        let variable = parse_variable(input);
+        assert!(variable.is_ok());
+
+        let (input, variable) = variable.unwrap();
+        assert_eq!(variable.fragment(), &"a");
+        assert_eq!(input.fragment(), &" }}");
+    }
+
+    #[test]
     fn can_parse_variable_with_underscore() {
         let input = Span::new("£publish_date }}");
         let (input, variable) = parse_variable(input).unwrap();
 
         assert_eq!(variable.fragment(), &"publish_date");
         assert_eq!(input.fragment(), &" }}");
-    }
-
-    #[test]
-    fn can_parse_meta_comment_slash() {
-        let input = Span::new("// This is a comment");
-        let (input, meta_comment) = parse_meta_comment(input).expect("to parse comment");
-        dbg!(meta_comment);
-
-        assert_eq!(input.fragment(), &"");
-        assert_eq!(meta_comment.fragment(), &"This is a comment");
-    }
-
-    #[test]
-    fn can_parse_meta_comment_hash() {
-        let input = Span::new("# This is a comment");
-        let (input, meta_comment) = parse_meta_comment(input).expect("to parse comment");
-        dbg!(meta_comment);
-
-        assert_eq!(input.fragment(), &"");
-        assert_eq!(meta_comment.fragment(), &"This is a comment");
     }
 
     #[test]
@@ -615,6 +645,37 @@ mod tests {
         let input = Span::new("£_author");
         let variable = parse_variable(input);
         assert!(variable.is_err());
+    }
+
+    #[test]
+    fn can_parse_meta_comment_slash() {
+        let input = Span::new("// This is a comment");
+        let (input, meta_comment) = parse_meta_comment(input).expect("to parse comment");
+
+        assert_eq!(input.fragment(), &"");
+        assert_eq!(meta_comment.fragment(), &"This is a comment");
+    }
+
+    #[test]
+    fn can_parse_meta_comment_hash() {
+        let input = Span::new("# This is a comment");
+        let (input, meta_comment) = parse_meta_comment(input).expect("to parse comment");
+
+        assert_eq!(input.fragment(), &"");
+        assert_eq!(meta_comment.fragment(), &"This is a comment");
+    }
+
+    #[test]
+    fn can_parse_meta_comment_before_key_value() {
+        let input = Span::new("// This is a comment\ntitle = My Title");
+        let (input, meta_comment) = parse_meta_comment(input).expect("to parse comment");
+        assert_eq!(meta_comment.fragment(), &"This is a comment");
+
+        let (input, meta) = parse_meta_key_value(input).expect("to parse key value");
+        assert_eq!(meta.key, "title".to_string());
+        assert_eq!(meta.value, "My Title".to_string());
+
+        assert_eq!(input.fragment(), &"");
     }
 
     #[test]

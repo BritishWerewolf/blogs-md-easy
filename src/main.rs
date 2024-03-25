@@ -33,6 +33,15 @@ pub struct Meta {
     pub value: String,
 }
 
+impl Meta {
+    pub fn new(key: &str, value: &str) -> Self {
+        Self {
+            key: key.trim().to_string(),
+            value: value.trim().to_string(),
+        }
+    }
+}
+
 // A position for a Cursor.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Marker {
@@ -180,10 +189,7 @@ fn parse_meta_key_value(input: Span) -> IResult<Span, Meta> {
         parse_meta_value
     )(input)
     .map(|(input, (key, value))| {
-        (input, Meta {
-            key: key.trim().to_string(),
-            value: value.trim().to_string()
-        })
+        (input, Meta::new(key.fragment(), value.fragment()))
     })
 }
 
@@ -719,7 +725,7 @@ mod tests {
     fn can_parse_meta_value() {
         let input = Span::new("title = My Title");
         let (_, meta) = parse_meta_key_value(input).expect("to parse meta key-value");
-        assert_eq!(meta, Meta { key: "title".to_string(), value: "My Title".to_string() });
+        assert_eq!(meta, Meta::new("title", "My Title"));
     }
 
     #[test]
@@ -727,7 +733,7 @@ mod tests {
         let input = Span::new("publish_date = 2024-01-01");
         dbg!(input);
         let (_, meta) = parse_meta_key_value(input).expect("to parse meta key-value");
-        assert_eq!(meta, Meta { key: "publish_date".to_string(), value: "2024-01-01".to_string() });
+        assert_eq!(meta, Meta::new("publish_date", "2024-01-01"));
     }
 
     #[test]
@@ -735,7 +741,7 @@ mod tests {
         let input = Span::new("£publish_date = 2024-01-01");
         dbg!(input);
         let (_, meta) = parse_meta_key_value(input).expect("to parse meta key-value");
-        assert_eq!(meta, Meta { key: "publish_date".to_string(), value: "2024-01-01".to_string() });
+        assert_eq!(meta, Meta::new("publish_date", "2024-01-01"));
     }
 
     #[test]
@@ -744,8 +750,8 @@ mod tests {
         let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
 
         assert_eq!(meta, vec![
-            Some(Meta { key: "title".to_string(), value: "Meta title".to_string() }),
-            Some(Meta { key: "author".to_string(), value: "John Doe".to_string() }),
+            Some(Meta::new("title", "Meta title")),
+            Some(Meta::new("author", "John Doe")),
         ]);
 
         assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
@@ -757,8 +763,8 @@ mod tests {
         let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
 
         assert_eq!(meta, vec![
-            Some(Meta { key: "title".to_string(), value: "Meta title".to_string() }),
-            Some(Meta { key: "author".to_string(), value: "John Doe".to_string() }),
+            Some(Meta::new("title", "Meta title")),
+            Some(Meta::new("author", "John Doe")),
         ]);
 
         assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
@@ -784,8 +790,8 @@ mod tests {
         let meta: Vec<Meta> = meta.into_iter().filter_map(|m| m).collect();
 
         assert_eq!(meta, vec![
-            Meta { key: "author".to_string(), value: "John Doe".to_string() },
-            Meta { key: "publish_date".to_string(), value: "2024-01-01".to_string() },
+            Meta::new("author", "John Doe"),
+            Meta::new("publish_date", "2024-01-01"),
         ]);
 
         assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
@@ -854,8 +860,8 @@ mod tests {
         // Unwrap, to peek the values, then re-wrap.
         let meta_values = meta_values.unwrap_or_default();
         assert_eq!(meta_values, vec![
-            Some(Meta { key: "title".to_string(), value: "Meta title".to_string() }),
-            Some(Meta { key: "author".to_string(), value: "John Doe".to_string() }),
+            Some(Meta::new("title", "Meta title")),
+            Some(Meta::new("author", "John Doe")),
         ]);
         let variables: HashMap<String, String> = create_variables(markdown, meta_values).expect("to create variables");
 

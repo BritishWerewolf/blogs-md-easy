@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use clap::Parser as ClapParser;
 use std::{collections::HashMap, fs, path::PathBuf};
-use nom::{branch::alt, bytes::complete::{tag, take_till, take_until, take_while_m_n}, character::complete::{alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till}, sequence::{delimited, preceded, separated_pair, terminated, tuple}, IResult, Parser};
+use nom::{branch::alt, bytes::complete::{tag, take_till, take_until, take_while, take_while_m_n}, character::complete::{alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till}, sequence::{delimited, preceded, separated_pair, terminated, tuple}, IResult, Parser};
 use nom_locate::LocatedSpan;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -27,10 +27,18 @@ struct Cli {
     output_dir: Option<PathBuf>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum Directive {
+    Uppercase,
+    Lowercase,
+    Markdown,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Meta {
     pub key: String,
     pub value: String,
+    pub directives: Vec<Directive>,
 }
 
 impl Meta {
@@ -38,6 +46,7 @@ impl Meta {
         Self {
             key: key.trim().to_string(),
             value: value.trim().to_string(),
+            directives: Vec::new(),
         }
     }
 }
@@ -47,6 +56,15 @@ impl Meta {
 struct Marker {
     line: u32,
     offset: usize,
+}
+
+impl Marker {
+    fn new(span: Span) -> Self {
+        Self {
+            line: span.location_line(),
+            offset: span.location_offset(),
+        }
+    }
 }
 
 impl Default for Marker {
@@ -65,43 +83,30 @@ struct Selection {
 }
 
 impl Selection {
-    fn new(input: Span) -> Self {
+    fn from(start: Span, end: Span) -> Self {
         Self {
-            start: Marker {
-                line: input.location_line(),
-                offset: input.location_offset(),
-            },
+            start: Marker::new(start),
             end: Marker {
-                line: input.location_line(),
-                offset: (input.location_offset() + input.fragment().len())
-            },
+                line: end.location_line(),
+                offset: end.location_offset() + end.fragment().len()
+            }
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct Placeholder<'a> {
+struct Placeholder {
     name: String,
-    span: Span<'a>,
     selection: Selection,
+    directives: Vec<Directive>,
 }
 
-impl<'a> Placeholder<'a> {
-    fn new(span: Span<'a>) -> Self {
-        Self {
-            name: span.fragment().replace("{", "").replace("£", "").replace("}", "").trim().to_string(),
-            span: span,
-            selection: Selection::new(span),
-        }
-    }
-}
-
-impl<'a> Default for Placeholder<'a> {
+impl Default for Placeholder {
     fn default() -> Self {
         Self {
             name: String::default(),
-            span: Span::new(""),
             selection: Selection::default(),
+            directives: Vec::default(),
         }
     }
 }
@@ -206,9 +211,10 @@ fn parse_meta_key_value(input: Span) -> IResult<Span, Meta> {
 /// ```rust
 /// let input = Span::new("£publish_date = 2021-01-01");
 /// let (_, meta) = parse_meta_line(input).unwrap();
-/// assert!(meta.is_some());
-/// assert_eq!(meta.unwrap().key, "publish_date");
-/// assert_eq!(meta.unwrap().value, "2021-01-01");
+/// assert!(&meta.is_some());
+/// let meta = meta.unwrap();
+/// assert_eq!(&meta.key, "publish_date");
+/// assert_eq!(&meta.value, "2021-01-01");
 /// ```
 fn parse_meta_line(input: Span) -> IResult<Span, Option<Meta>> {
     let (input, _) = space0(input)?;
@@ -230,7 +236,11 @@ fn parse_meta_line(input: Span) -> IResult<Span, Option<Meta>> {
 /// assert_eq!(meta.len(), 2);
 /// assert_eq!(meta, vec![
 ///     None,
-///     Some(Meta { key: "publish_date".to_string(), value: "2021-01-01".to_string() }),
+///     Some(Meta {
+///         key: "publish_date".to_string(),
+///         value: "2021-01-01".to_string(),
+///         directives: vec![],
+///     }),
 /// ]);
 /// assert_eq!(input.fragment(), &"# Markdown title");
 /// ```
@@ -330,6 +340,45 @@ fn parse_variable(input: Span) -> IResult<Span, Span> {
     )(input)
 }
 
+/// Parse a placeholder directive, which is any alphabetic character.
+/// Optionally, there can be arguments provided following a colon.
+///
+/// # Examples
+/// A simple directive with no arguments.
+/// ```rust
+/// let input = Span::new("uppercase");
+/// let (_, directive) = parse_placeholder_directive_key(input).unwrap();
+/// assert_eq!(directive, Some(Directive::Uppercase));
+/// ```
+fn parse_placeholder_directive_key(input: Span) -> IResult<Span, Option<Directive>> {
+    let (input, name) = take_while(|c| is_alphabetic(c))(input)?;
+    let (input, _) = opt(tuple((multispace0, tag(":"), multispace0)))(input)?;
+    // TODO Implement parsing arguments.
+    let (input, _arg) = opt(take_while(|c| is_alphabetic(c)))(input)?;
+    let directive = match name.to_ascii_lowercase().as_str() {
+        "lowercase" => Some(Directive::Lowercase),
+        "uppercase" => Some(Directive::Uppercase),
+        _ => None,
+    };
+    Ok((input, directive))
+}
+
+/// Parses the placeholder directive preceded by a pipe character.
+///
+/// # Example
+/// ```rust
+/// let input = Span::new(" | uppercase }}");
+/// let (input, placeholder) = parse_placeholder_directive(input).unwrap();
+/// assert_eq!(placeholder, Some(Directive::Uppercase));
+/// assert_eq!(input.fragment(), &" }}");
+/// ```
+fn parse_placeholder_directive(input: Span) -> IResult<Span, Option<Directive>> {
+    preceded(
+        tuple((multispace0, tag("|"), multispace0)),
+        parse_placeholder_directive_key
+    )(input)
+}
+
 /// Parse a template placeholder. This is a variable name, surrounded by `{{`
 /// and `}}`.
 /// Whitespace is optional.
@@ -339,21 +388,33 @@ fn parse_variable(input: Span) -> IResult<Span, Span> {
 /// ```rust
 /// let input = Span::new("{{ £variable }}");
 /// let (_, placeholder) = parse_placeholder(input).unwrap();
-/// assert_eq!(placeholder.fragment(), &"{{ £variable }}");
+/// assert_eq!(placeholder.name.as_str(), "variable");
+/// assert_eq!(placeholder.selection.start.offset, 0);
+/// assert_eq!(placeholder.selection.end.offset, 16);
 /// ```
 ///
 /// A placeholder without whitespace.
 /// ```rust
 /// let input = Span::new("{{£variable}}");
 /// let (_, placeholder) = parse_placeholder(input).unwrap();
-/// assert_eq!(placeholder.fragment(), &"{{£variable}}");
+/// assert_eq!(placeholder.name.as_str(), "variable");
+/// assert_eq!(placeholder.selection.start.offset, 0);
+/// assert_eq!(placeholder.selection.end.offset, 14);
 /// ```
-fn parse_placeholder(input: Span) -> IResult<Span, Span> {
-    recognize(tuple((
+fn parse_placeholder(input: Span) -> IResult<Span, Placeholder> {
+    tuple((
         tuple((tag("{{"), multispace0)),
         parse_variable,
+        many0(parse_placeholder_directive),
         tuple((multispace0, tag("}}"))),
-    )))(input)
+    ))(input)
+    .map(|(input, (start, variable, directives, end))| {
+        (input, Placeholder {
+            name: variable.to_string(),
+            directives: directives.into_iter().filter_map(|d| d).collect(),
+            selection: Selection::from(start.0, end.1)
+        })
+    })
 }
 
 /// Parse a template consuming - and discarding - any character, and stopping at
@@ -364,11 +425,11 @@ fn parse_placeholder(input: Span) -> IResult<Span, Span> {
 /// let input = Span::new("Hello, {{ £name }}!");
 /// let (input, placeholders) = take_till_placeholder(input).expect("to parse input");
 /// assert_eq!(input.fragment(), &"!");
-/// assert_eq!(placeholders.fragment(), &"{{ £name }}");
+/// assert_eq!(placeholders.name.as_str(), "name");
 /// ```
-fn take_till_placeholder(input: Span) -> IResult<Span, Span> {
+fn take_till_placeholder(input: Span) -> IResult<Span, Placeholder> {
     many_till(anychar, parse_placeholder)(input)
-    // Map to remove the multiple characters.
+    // Map to remove anychar's captures.
     .map(|(input, (_, placeholder))| (input, placeholder))
 }
 
@@ -381,32 +442,16 @@ fn take_till_placeholder(input: Span) -> IResult<Span, Span> {
 /// let input = Span::new("Hello, {{ £name }}!");
 /// let placeholders = parse_placeholder_locations(input).unwrap();
 /// assert_eq!(placeholders.len(), 1);
-/// assert_eq!(placeholders[0].0, "name");
-/// assert_eq!(placeholders[0].1.span.fragment(), &"{{ £name }}");
+/// assert_eq!(placeholders[0].name.as_str(), "name");
+/// assert_eq!(placeholders[0].selection.start.offset, 7);
+/// assert_eq!(placeholders[0].selection.end.offset, 19);
 /// ```
 fn parse_placeholder_locations(input: Span) -> Result<Vec<Placeholder>, anyhow::Error> {
-    let mut old_input = input;
-    let default_span = Span::new("");
-    let mut placeholder = Span::new("start");
-    let mut placeholders: Vec<Placeholder> = Vec::new();
-
-    while placeholder != default_span {
-        let (new_input, new_placeholder) = take_till_placeholder(old_input).unwrap_or((default_span, default_span));
-
-        // Do another check because of the unwrap_or.
-        if new_placeholder != default_span {
-            placeholders.push(
-                Placeholder::new(new_placeholder)
-            );
-        }
-
-        old_input = new_input;
-        placeholder = new_placeholder;
-    }
+    let (_, mut placeholders) = many0(take_till_placeholder)(input).unwrap_or((input, Vec::new()));
 
     // Sort in reverse so that when we replace each placeholder, the offsets do
     // not affect offsets after this point.
-    placeholders.sort_by(|a, b| b.span.location_offset().cmp(&a.span.location_offset()));
+    placeholders.sort_by(|a, b| b.selection.start.offset.cmp(&a.selection.start.offset));
 
     Ok(placeholders)
 }
@@ -529,7 +574,7 @@ fn main() -> Result<(), anyhow::Error> {
 
     // All placeholders that are present in the template.
     let mut placeholders = parse_placeholder_locations(template)?;
-    placeholders.sort_by(|a, b| b.span.location_offset().cmp(&a.span.location_offset()));
+    placeholders.sort_by(|a, b| b.selection.start.offset.cmp(&a.selection.start.offset));
 
     for (markdown, markdown_url) in &markdowns {
         let markdown = Span::new(markdown);
@@ -692,7 +737,7 @@ mod tests {
         assert!(parsed_placeholder.is_ok());
 
         let (input, placeholder) = parsed_placeholder.unwrap();
-        assert_eq!(placeholder.fragment(), &"{{ £content }}");
+        assert_eq!(placeholder.name, "content".to_string());
         assert_eq!(input.fragment(), &"\nTemplate content");
     }
 
@@ -811,11 +856,11 @@ mod tests {
             "title",
         ]);
 
-        assert_eq!(placeholders[0].span.location_offset(), 21);
-        assert_eq!(placeholders[0].span.fragment(), &"{{ £content }}");
+        assert_eq!(placeholders[0].selection.start.offset, 21);
+        assert_eq!(placeholders[0].name, "content".to_string());
 
-        assert_eq!(placeholders[1].span.location_offset(), 4);
-        assert_eq!(placeholders[1].span.fragment(), &"{{ £title }}");
+        assert_eq!(placeholders[1].selection.start.offset, 4);
+        assert_eq!(placeholders[1].name, "title".to_string());
     }
 
     #[test]
@@ -826,12 +871,62 @@ mod tests {
     }
 
     #[test]
+    fn can_parse_placeholder_with_no_directive() {
+        // Directives are case insensitive.
+        let input = Span::new("<p>{{ £variable }}</p>");
+        let placeholders = parse_placeholder_locations(input).expect("to parse placeholder");
+
+        assert_eq!(placeholders.len(), 1);
+        assert_eq!(placeholders[0].name, "variable".to_string());
+        assert_eq!(placeholders[0].selection.start.offset, 3);
+        assert_eq!(placeholders[0].selection.end.offset, 19);
+        assert_eq!(placeholders[0].directives, vec![]);
+    }
+
+    #[test]
+    fn can_parse_placeholder_uppercase_directive() {
+        // Directives are case insensitive.
+        let input = Span::new("<p>{{ £variable | UPPERCASE }}</p>");
+        let placeholders = parse_placeholder_locations(input).expect("to parse placeholder");
+
+        assert_eq!(placeholders.len(), 1);
+        assert_eq!(placeholders[0].name, "variable".to_string());
+        assert_eq!(placeholders[0].selection.start.offset, 3);
+        assert_eq!(placeholders[0].selection.end.offset, 31);
+        assert_eq!(placeholders[0].directives, vec![Directive::Uppercase]);
+    }
+
+    #[test]
+    fn can_parse_placeholder_lowercase_directive() {
+        let input = Span::new("<p>{{ £variable | lowercase }}</p>");
+        let placeholders = parse_placeholder_locations(input).expect("to parse placeholder");
+
+        assert_eq!(placeholders.len(), 1);
+        assert_eq!(placeholders[0].name, "variable".to_string());
+        assert_eq!(placeholders[0].selection.start.offset, 3);
+        assert_eq!(placeholders[0].selection.end.offset, 31);
+        assert_eq!(placeholders[0].directives, vec![Directive::Lowercase]);
+    }
+
+    #[test]
+    fn can_parse_two_placeholder_directives() {
+        let input = Span::new("<p>{{ £title | uppercase | lowercase }}</p>");
+        let placeholders = parse_placeholder_locations(input).expect("parse placeholders");
+
+        assert_eq!(placeholders.len(), 1);
+        assert_eq!(placeholders[0].name, "title".to_string());
+        assert_eq!(placeholders[0].selection.start.offset, 3);
+        assert_eq!(placeholders[0].selection.end.offset, 40);
+        assert_eq!(placeholders[0].directives, vec![Directive::Uppercase, Directive::Lowercase]);
+    }
+
+    #[test]
     fn can_replace_placeholder_from_meta() {
         let input = Span::new("<meta>\ntitle = Meta title\n£author = John Doe\n</meta>\n# Markdown title\nThis is my content");
         let template = Span::new("<html>\n<head>\n<title>{{ £title }}</title>\n</head>\n<body>\n<h1>{{ £title }}</h1>\n<small>By {{ £author }}</small>\n<section>{{ £content }}</section>\n</body>\n</html>");
 
         let mut placeholders = parse_placeholder_locations(template).expect("to parse placeholders");
-        placeholders.sort_by(|a, b| b.span.location_offset().cmp(&a.span.location_offset()));
+        placeholders.sort_by(|a, b| b.selection.start.offset.cmp(&a.selection.start.offset));
 
         let mut placeholder_title_iter = placeholders.iter().filter(|p| &p.name == "title");
         assert!(placeholder_title_iter.clone().count() == 2);

@@ -29,6 +29,7 @@ struct Cli {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Directive {
+    Date(String),
     Uppercase,
     Lowercase,
     Markdown,
@@ -350,12 +351,14 @@ fn parse_variable(input: Span) -> IResult<Span, Span> {
 /// let (_, directive) = parse_placeholder_directive_key(input).unwrap();
 /// assert_eq!(directive, Some(Directive::Uppercase));
 /// ```
-fn parse_placeholder_directive_key(input: Span) -> IResult<Span, Option<Directive>> {
+fn parse_placeholder_directive_enum(input: Span) -> IResult<Span, Option<Directive>> {
     let (input, name) = take_while(|c| is_alphabetic(c))(input)?;
     let (input, _) = opt(tuple((multispace0, tag(":"), multispace0)))(input)?;
-    // TODO Implement parsing arguments.
-    let (input, _arg) = opt(take_while(|c| is_alphabetic(c)))(input)?;
+
+    let (input, arg) = opt(take_while(|c| c != '|' && c != '}'))(input)?;
+
     let directive = match name.to_ascii_lowercase().as_str() {
+        "date" => arg.and_then(|arg| Some(Directive::Date(arg.to_string()))),
         "lowercase" => Some(Directive::Lowercase),
         "uppercase" => Some(Directive::Uppercase),
         _ => None,
@@ -375,7 +378,7 @@ fn parse_placeholder_directive_key(input: Span) -> IResult<Span, Option<Directiv
 fn parse_placeholder_directive(input: Span) -> IResult<Span, Option<Directive>> {
     preceded(
         tuple((multispace0, tag("|"), multispace0)),
-        parse_placeholder_directive_key
+        parse_placeholder_directive_enum
     )(input)
 }
 
@@ -918,6 +921,15 @@ mod tests {
         assert_eq!(placeholders[0].selection.start.offset, 3);
         assert_eq!(placeholders[0].selection.end.offset, 40);
         assert_eq!(placeholders[0].directives, vec![Directive::Uppercase, Directive::Lowercase]);
+    }
+
+    #[test]
+    fn can_parse_placeholder_directive_with_arg() {
+        let input = Span::new("date: dd-mmm-yyyy");
+        let (_, directive) = parse_placeholder_directive_enum(input).expect("to parse directive");
+        assert!(directive.is_some());
+        let directive = directive.unwrap();
+        assert_eq!(directive, Directive::Date("dd-mmm-yyyy".to_string()));
     }
 
     #[test]

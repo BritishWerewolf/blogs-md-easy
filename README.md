@@ -66,6 +66,62 @@ Variables can be reused as many times as required, and will be replaced, providi
 
 Finally, the `£content` variable is automatically generated based on the entire body of the Markdown file.
 
+#### Directives
+It's possible to mutate the placeholders during rendering by providing directives.  
+A directive is just a way of applying a pre-defined function to any placeholder variable.
+
+Let's use our previous template, and apply a simple directive to the `£title` variable.
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{{ £description }}">
+
+    <title>{{ £title }}</title>
+</head>
+<body>
+    <section>
+        <h1>{{ £title | uppercase }}</h1>
+        <p>Authored by {{ £author }}</p>
+    </section>
+    <section>{{ £content }}</section>
+</body>
+</html>
+```
+By providing the function after a pipe (`|`) character, we can mutate that variable in that particular location. This is particularly useful in cases where a placeholder is required multiple times through a template, but the formatting should be different in all cases.
+
+There are currently three supported directives:
+* `lowercase` - Convert the value to lowercase.
+* `uppercase` - Convert the value to uppercase.
+* `markdown` - Convert the value from Markdown into HTML.
+
+By default, no directives will be provided, unless specified within the template, with the exception of `£content` which will have `markdown` applied.
+
+Directives are case insensitive, meaning `| uppercase` is the same as `| UPPERCASE`. They can also be chained together, such as in the following example.
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{{ £description }}">
+
+    <title>{{ £title }}</title>
+</head>
+<body>
+    <section>
+        {{ £title | uppercase | markdown }}
+        <p>Authored by {{ £author }}</p>
+    </section>
+    <section>{{ £content }}</section>
+</body>
+</html>
+```
+Here we are converting the title to uppercase, and then mutating the value into markdown.  
+Chained directives are evaluated from left to right.
+
 ### Markdowns
 [Markdowns](https://daringfireball.net/projects/markdown) are simple text files that contain any text, and an optional `meta` section.
 
@@ -171,7 +227,8 @@ Currently, a new line is placed before all headings (from `h2` to to `h6`), but 
 
 ## Todo List
 - [ ] Add if statements to render content based on a condition.
-- [ ] Add directives to placeholders.
+- [x] Add directives to placeholders.
+    - [ ] Add directives that support arguments.
 - [ ] Add tag filter to prevent parsing scripts.
 - [ ] Add better handling for errors in meta sections.
     - For example if a key is passed without a value, then no meta values are parsed.

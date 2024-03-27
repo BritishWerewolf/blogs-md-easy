@@ -361,6 +361,7 @@ fn parse_placeholder_directive_enum(input: Span) -> IResult<Span, Option<Directi
         "date" => arg.and_then(|arg| Some(Directive::Date(arg.to_string()))),
         "lowercase" => Some(Directive::Lowercase),
         "uppercase" => Some(Directive::Uppercase),
+        "markdown"  => Some(Directive::Markdown),
         _ => None,
     };
     Ok((input, directive))
@@ -411,7 +412,12 @@ fn parse_placeholder(input: Span) -> IResult<Span, Placeholder> {
         many0(parse_placeholder_directive),
         tuple((multispace0, tag("}}"))),
     ))(input)
-    .map(|(input, (start, variable, directives, end))| {
+    .map(|(input, (start, variable, mut directives, end))| {
+        // By default, £content will always be parsed as Markdown.
+        if variable.to_ascii_lowercase().as_str() == "content" && !directives.contains(&Some(Directive::Markdown)) {
+            directives.push(Some(Directive::Markdown));
+        }
+
         (input, Placeholder {
             name: variable.to_string(),
             directives: directives.into_iter().filter_map(|d| d).collect(),
@@ -535,14 +541,6 @@ fn create_variables(markdown: Span, meta_values: Vec<Option<Meta>>) -> Result<Ha
     }
     if !variables.contains_key("content") {
         let content = markdown.fragment().trim().to_string();
-        let content = markdown::to_html_with_options(&content, &markdown::Options {
-            compile: markdown::CompileOptions {
-                allow_dangerous_html: true,
-                allow_dangerous_protocol: false,
-                ..Default::default()
-            },
-            ..Default::default()
-        }).unwrap_or_default();
         variables.insert("content".to_string(), content);
     }
 
@@ -567,7 +565,7 @@ fn main() -> Result<(), anyhow::Error> {
     // Get only existing markdowns.
     let markdown_urls: Vec<PathBuf> = cli.markdowns
         .into_iter()
-        .filter(|file| file.exists() && file.extension().unwrap_or_default() == "md" )
+        .filter(|file| file.exists() && file.extension().unwrap_or_default() == "md")
         .collect();
     let markdowns: Vec<String> = markdown_urls
         .iter()
@@ -602,6 +600,27 @@ fn main() -> Result<(), anyhow::Error> {
 
         for placeholder in &placeholders {
             if let Some(variable) = variables.get(&placeholder.name) {
+                // Used to deref the variable.
+                let mut variable = variable.to_owned();
+
+                for directive in &placeholder.directives {
+                    variable = match directive {
+                        Directive::Lowercase => variable.to_lowercase(),
+                        Directive::Uppercase => variable.to_uppercase(),
+                        Directive::Markdown  => {
+                            markdown::to_html_with_options(&variable, &markdown::Options {
+                                compile: markdown::CompileOptions {
+                                    allow_dangerous_html: true,
+                                    allow_dangerous_protocol: false,
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            }).unwrap_or_default()
+                        }
+                        _ => unimplemented!(),
+                    }
+                }
+
                 html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &variable);
             } else {
                 let url = markdown_url.to_str().unwrap_or_default();

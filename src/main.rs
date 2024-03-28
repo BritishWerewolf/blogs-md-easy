@@ -95,22 +95,13 @@ impl Selection {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 struct Placeholder {
     name: String,
     selection: Selection,
     directives: Vec<Directive>,
 }
 
-impl Default for Placeholder {
-    fn default() -> Self {
-        Self {
-            name: String::default(),
-            selection: Selection::default(),
-            directives: Vec::default(),
-        }
-    }
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Parsers
@@ -292,7 +283,7 @@ pub fn parse_title(input: Span) -> IResult<Span, Span> {
 /// assert!(!is_alphabetic('-'));
 /// ```
 fn is_alphabetic(input: char) -> bool {
-    vec!['a'..='z', 'A'..='Z'].into_iter().flatten().find(|c| c == &input).is_some()
+    vec!['a'..='z', 'A'..='Z'].into_iter().flatten().any(|c| c == input)
 }
 
 /// Variable names must start with an alphabetic character, then any number of
@@ -352,13 +343,13 @@ fn parse_variable(input: Span) -> IResult<Span, Span> {
 /// assert_eq!(directive, Some(Directive::Uppercase));
 /// ```
 fn parse_placeholder_directive_enum(input: Span) -> IResult<Span, Option<Directive>> {
-    let (input, name) = take_while(|c| is_alphabetic(c))(input)?;
+    let (input, name) = take_while(is_alphabetic)(input)?;
     let (input, _) = opt(tuple((multispace0, tag(":"), multispace0)))(input)?;
 
     let (input, arg) = opt(take_while(|c| c != '|' && c != '}'))(input)?;
 
     let directive = match name.to_ascii_lowercase().as_str() {
-        "date" => arg.and_then(|arg| Some(Directive::Date(arg.to_string()))),
+        "date" => arg.map(|arg| Directive::Date(arg.to_string())),
         "lowercase" => Some(Directive::Lowercase),
         "uppercase" => Some(Directive::Uppercase),
         "markdown"  => Some(Directive::Markdown),
@@ -420,7 +411,7 @@ fn parse_placeholder(input: Span) -> IResult<Span, Placeholder> {
 
         (input, Placeholder {
             name: variable.to_string(),
-            directives: directives.into_iter().filter_map(|d| d).collect(),
+            directives: directives.into_iter().flatten().collect(),
             selection: Selection::from(start.0, end.1)
         })
     })
@@ -618,7 +609,7 @@ fn main() -> Result<(), anyhow::Error> {
         if !unused_variables.is_empty() {
             println!(
                 "Warning: Unused variable{} in '{}': {}",
-                if &unused_variables.len() == &(1 as usize) { "" } else { "s" },
+                if unused_variables.len() == 1_usize { "" } else { "s" },
                 &markdown_url.to_string_lossy(),
                 unused_variables.iter().map(|v| v.to_string()).collect::<Vec<String>>().join(", ")
             );
@@ -866,7 +857,7 @@ mod tests {
         // We get None, Some, None, Some.
         assert!(meta.len() == 4);
         // Then filter and unwrap.
-        let meta: Vec<Meta> = meta.into_iter().filter_map(|m| m).collect();
+        let meta: Vec<Meta> = meta.into_iter().flatten().collect();
 
         assert_eq!(meta, vec![
             Meta::new("author", "John Doe"),
@@ -1003,12 +994,12 @@ mod tests {
             end: Marker { line: 3, offset: 34 },
         });
 
-        assert_eq!(placeholders.iter().filter(|p| &p.name == "content").next().expect("content to exist").selection, Selection {
+        assert_eq!(placeholders.iter().find(|p| &p.name == "content").expect("content to exist").selection, Selection {
             start: Marker { line: 8, offset: 123 },
             end: Marker { line: 8, offset: 138 },
         });
 
-        assert_eq!(placeholders.iter().filter(|p| &p.name == "author").next().expect("author to exist").selection, Selection {
+        assert_eq!(placeholders.iter().find(|p| &p.name == "author").expect("author to exist").selection, Selection {
             start: Marker { line: 7, offset: 91 },
             end: Marker { line: 7, offset: 105 },
         });
@@ -1036,7 +1027,7 @@ mod tests {
 
                 html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &variable);
             } else {
-                assert!(false);
+                assert!(variables.contains_key(&placeholder.name));
             }
         }
 

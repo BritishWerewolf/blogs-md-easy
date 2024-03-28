@@ -547,6 +547,32 @@ fn create_variables(markdown: Span, meta_values: Vec<Option<Meta>>) -> Result<Ha
     Ok(variables)
 }
 
+/// Take a variable, and run it through a Directive function to get the new
+/// output.
+///
+/// # Example
+/// ```rust
+/// let variable = "hello, world!".to_string();
+/// assert_eq!("HELLO, WORLD!", render_directive(variable, &Directive::Uppercase));
+/// ```
+fn render_directive(variable: String, directive: &Directive) -> String {
+    match directive {
+        Directive::Lowercase => variable.to_lowercase(),
+        Directive::Uppercase => variable.to_uppercase(),
+        Directive::Markdown  => {
+            markdown::to_html_with_options(&variable, &markdown::Options {
+                compile: markdown::CompileOptions {
+                    allow_dangerous_html: true,
+                    allow_dangerous_protocol: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }).unwrap_or_default()
+        }
+        _ => unimplemented!(),
+    }
+}
+
 
 
 
@@ -604,21 +630,7 @@ fn main() -> Result<(), anyhow::Error> {
                 let mut variable = variable.to_owned();
 
                 for directive in &placeholder.directives {
-                    variable = match directive {
-                        Directive::Lowercase => variable.to_lowercase(),
-                        Directive::Uppercase => variable.to_uppercase(),
-                        Directive::Markdown  => {
-                            markdown::to_html_with_options(&variable, &markdown::Options {
-                                compile: markdown::CompileOptions {
-                                    allow_dangerous_html: true,
-                                    allow_dangerous_protocol: false,
-                                    ..Default::default()
-                                },
-                                ..Default::default()
-                            }).unwrap_or_default()
-                        }
-                        _ => unimplemented!(),
-                    }
+                    variable = render_directive(variable, directive);
                 }
 
                 html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &variable);
@@ -919,6 +931,13 @@ mod tests {
     }
 
     #[test]
+    fn can_render_uppercase_directive() {
+        let variable = "hello, world!".to_string();
+        let variable = render_directive(variable, &Directive::Uppercase);
+        assert_eq!("HELLO, WORLD!", variable);
+    }
+
+    #[test]
     fn can_parse_placeholder_lowercase_directive() {
         let input = Span::new("<p>{{ £variable | lowercase }}</p>");
         let placeholders = parse_placeholder_locations(input).expect("to parse placeholder");
@@ -928,6 +947,20 @@ mod tests {
         assert_eq!(placeholders[0].selection.start.offset, 3);
         assert_eq!(placeholders[0].selection.end.offset, 31);
         assert_eq!(placeholders[0].directives, vec![Directive::Lowercase]);
+    }
+
+    #[test]
+    fn can_render_lowercase_directive() {
+        let variable = "HELLO, WORLD!".to_string();
+        let variable = render_directive(variable, &Directive::Lowercase);
+        assert_eq!("hello, world!", variable);
+    }
+
+    #[test]
+    fn can_render_markdown_directive() {
+        let variable = "# Title\nParagraph\n\n[link](https://example.com)".to_string();
+        let variable = render_directive(variable, &Directive::Markdown);
+        assert_eq!("<h1>Title</h1>\n<p>Paragraph</p>\n<p><a href=\"https://example.com\">link</a></p>", variable);
     }
 
     #[test]
@@ -994,6 +1027,13 @@ mod tests {
         let mut html_doc = template.to_string();
         for placeholder in &placeholders {
             if let Some(variable) = variables.get(&placeholder.name) {
+                // Used to deref the variable.
+                let mut variable = variable.to_owned();
+
+                for directive in &placeholder.directives {
+                    variable = render_directive(variable, directive);
+                }
+
                 html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &variable);
             } else {
                 assert!(false);

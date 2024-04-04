@@ -126,7 +126,8 @@ Chained directives are evaluated from left to right.
 [Markdowns](https://daringfireball.net/projects/markdown) are simple text files that contain any text, and an optional `meta` section.
 
 The `meta` section of the Markdown file is unique to this program.  
-This section must be at the top of the document, and will be start with either `:meta` or `<meta>`, and closed with `:meta` or `</meta>`.
+This section must be at the top of the document, and will be start with either `:meta` or `<meta>`, and closed with `:meta` or `</meta>`.  
+It's important that if you open the meta section with `:meta`, then you must close it with `:meta`; the same is true for `<meta>` and `</meta>` otherwise the content won't be read.
 
 Use the `meta` section to provide the template values for the variables that have been defined. As a result, the variables used in the `meta` section must adhere to the rules that apply to the template variables.
 
@@ -238,7 +239,7 @@ Currently, a new line is placed before all headings (from `h2` to to `h6`), but 
 - [ ] Option to run against markdowns to determine if they were built off a different template.
 - [x] Add comments to the meta section.
 - [ ] Add mutliline values to the meta section.
-- [ ] Ensure meta tags must be the same.
+- [x] Ensure meta tags must be the same.
     - If `:meta` is used to start the section, `:meta` should close it. Vice versa with `<meta>` and `</meta>`.
 - [ ] Formatting of the generated file.
 - [x] Document all functions.

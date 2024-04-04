@@ -237,11 +237,21 @@ fn parse_meta_line(input: Span) -> IResult<Span, Option<Meta>> {
 /// assert_eq!(input.fragment(), &"# Markdown title");
 /// ```
 pub fn parse_meta_section(input: Span) -> IResult<Span, Vec<Option<Meta>>> {
-    delimited(
-        tuple((multispace0, alt((tag(":meta"), tag("<meta>"))), multispace0)),
-        many1(parse_meta_line),
-        tuple((multispace0, alt((tag(":meta"), tag("</meta>"))), multispace0)),
-    )(input)
+    alt((
+        // I can't think of a more elegant solution for ensuring the pairs match
+        // one another. The previous solution could open with `:meta` and close
+        // with `</meta>` for example.
+        delimited(
+            tuple((multispace0, tag(":meta"), multispace0)),
+            many1(parse_meta_line),
+            tuple((multispace0, tag(":meta"), multispace0)),
+        ),
+        delimited(
+            tuple((multispace0, tag("<meta>"), multispace0)),
+            many1(parse_meta_line),
+            tuple((multispace0, tag("</meta>"), multispace0)),
+        ),
+    ))(input)
 }
 
 /// Parse the title of the document. This is either a Markdown title or an HTML
@@ -847,6 +857,14 @@ mod tests {
 
         assert!(meta.is_none());
         assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
+    }
+
+    #[test]
+    fn cannot_parse_mismatch_meta_tags() {
+        let input = Span::new(":meta\nauthor = John Doe\n</meta>");
+        let meta_values = parse_meta_section(input);
+        assert!(meta_values.is_err());
+        assert_eq!(input.fragment(), &":meta\nauthor = John Doe\n</meta>");
     }
 
     #[test]

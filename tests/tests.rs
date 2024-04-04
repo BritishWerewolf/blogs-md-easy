@@ -319,7 +319,9 @@ fn can_parse_placeholder_directive_with_arg() {
     let (_, directive) = parse_placeholder_directive_enum(input).expect("to parse directive");
     assert!(directive.is_some());
     let directive = directive.unwrap();
-    assert_eq!(directive, Directive::Date("dd-mmm-yyyy".to_string()));
+    assert_eq!(directive, Directive::Date {
+        format: "dd-mmm-yyyy".to_string()
+    });
 }
 
 #[test]

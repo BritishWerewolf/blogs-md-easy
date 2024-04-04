@@ -9,7 +9,9 @@ pub type Span<'a> = LocatedSpan<&'a str>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Directive {
-    Date(String),
+    Date {
+        format: String,
+    },
     Uppercase,
     Lowercase,
     Markdown,
@@ -371,7 +373,9 @@ pub fn parse_placeholder_directive_enum(input: Span) -> IResult<Span, Option<Dir
     let (input, arg) = opt(take_while(|c| c != '|' && c != '}'))(input)?;
 
     let directive = match name.to_ascii_lowercase().as_str() {
-        "date" => arg.map(|arg| Directive::Date(arg.to_string())),
+        "date" => arg.map(|arg| Directive::Date {
+            format: arg.to_string()
+        }),
         "lowercase" => Some(Directive::Lowercase),
         "uppercase" => Some(Directive::Uppercase),
         "markdown"  => Some(Directive::Markdown),

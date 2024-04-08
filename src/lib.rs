@@ -9,9 +9,6 @@ pub type Span<'a> = LocatedSpan<&'a str>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Filter {
-    Date {
-        format: String,
-    },
     Lowercase,
     Uppercase,
     Markdown,
@@ -524,13 +521,13 @@ pub fn parse_filter_args(input: Span) -> IResult<Span, Vec<(&str, &str)>> {
 /// A filter with just a value, but no key.  \
 /// This will be parsed as a key of `_`, which will then be set to a key of the
 /// given enum Struct variant that is deemed the default.  \
-/// In the case of `Filter::Date`, this will be the `format`.
+/// In the case of `Filter::Truncate`, this will be the `characters`.
 /// ```rust
 /// use blogs_md_easy::{parse_filter, Filter, Span};
 ///
-/// let input = Span::new("date = yyyy-mm-dd");
+/// let input = Span::new("truncate = 20");
 /// let (_, filter) = parse_filter(input).unwrap();
-/// assert_eq!(filter, Filter::Date { format: "yyyy-mm-dd".to_string() });
+/// assert_eq!(filter, Filter::Truncate { characters: 20, trail: "...".to_string() });
 /// ```
 ///
 /// A filter with multiple arguments, and given keys.
@@ -568,11 +565,6 @@ pub fn parse_filter(input: Span) -> IResult<Span, Filter> {
         let args: HashMap<&str, &str> = args.unwrap_or_default().into_iter().collect();
 
         (input, match name.fragment().to_lowercase().trim() {
-            "date" => Filter::Date {
-                format: args.get("format").unwrap_or(
-                    args.get("_").unwrap_or(&"YYYY-MM-DD")
-                ).to_string()
-            },
             "lowercase" => Filter::Lowercase,
             "uppercase" => Filter::Uppercase,
             "markdown" => Filter::Markdown,
@@ -804,12 +796,21 @@ pub fn create_variables(markdown: Span, meta_values: Vec<Option<Meta>>) -> Resul
 /// Take a variable, and run it through a Filter function to get the new
 /// output.
 ///
-/// # Example
+/// # Examples
+/// Filter that has no arguments.
 /// ```rust
 /// use blogs_md_easy::{render_filter, Filter};
 ///
 /// let variable = "hello, world!".to_string();
 /// assert_eq!("HELLO, WORLD!", render_filter(variable, &Filter::Uppercase));
+/// ```
+///
+/// Filter that has arguments.
+/// ```rust
+/// use blogs_md_easy::{render_filter, Filter};
+///
+/// let variable = "hello, world!".to_string();
+/// assert_eq!("he...", render_filter(variable, &Filter::Truncate { characters: 5, trail: "...".to_string() }));
 /// ```
 pub fn render_filter(variable: String, filter: &Filter) -> String {
     match filter {
@@ -825,6 +826,16 @@ pub fn render_filter(variable: String, filter: &Filter) -> String {
                 ..Default::default()
             }).unwrap_or_default()
         },
-        _ => unimplemented!(),
+        Filter::Truncate { characters, trail } => {
+            // First we need to account for the length of the trail.
+            let characters = characters - (trail.len() as u8);
+            let mut variable = variable.to_string();
+            // Now truncate and append the trail.
+            if (variable.len() as u8) > characters {
+                variable.truncate(characters as usize);
+                variable.push_str(trail);
+            }
+            variable
+        },
     }
 }

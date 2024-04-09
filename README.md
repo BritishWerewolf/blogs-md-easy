@@ -140,7 +140,7 @@ Chained filters are evaluated from left to right.
 
 #### Filters with arguments
 For some filters, there are optional arguments that can be provided. This is done through a comma separated list after an equals (`=`) sign.  
-Every filter can be provided with just the name, as every argument has been given a detail.
+Every filter can be provided with just the name, as every argument has been given a default value.
 
 What that means, is that these are all the same thing.
 ```html

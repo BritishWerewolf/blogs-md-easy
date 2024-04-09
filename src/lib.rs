@@ -666,17 +666,30 @@ pub fn parse_placeholder(input: Span) -> IResult<Span, Placeholder> {
     })
 }
 
-/// Parse a template consuming - and discarding - any character, and stopping at
-/// the first matched placeholder, returning it in full.
+/// Parse a string consuming - and discarding - any character, and stopping at
+/// the first matched placeholder, returning a Placeholder struct.
 ///
 /// # Example
 /// ```rust
-/// use blogs_md_easy::{take_till_placeholder, Span};
+/// use blogs_md_easy::{take_till_placeholder, Marker, Placeholder, Selection, Span};
 ///
 /// let input = Span::new("Hello, {{ £name }}!");
-/// let (input, placeholders) = take_till_placeholder(input).expect("to parse input");
+/// let (input, placeholder) = take_till_placeholder(input).expect("to parse input");
 /// assert_eq!(input.fragment(), &"!");
-/// assert_eq!(placeholders.name.as_str(), "name");
+/// assert_eq!(placeholder, Placeholder {
+///     name: "name".to_string(),
+///     selection: Selection {
+///         start: Marker {
+///             line: 1,
+///             offset: 7,
+///         },
+///         end: Marker {
+///             line: 1,
+///             offset: 19,
+///         },
+///     },
+///     filters: vec![],
+/// });
 /// ```
 pub fn take_till_placeholder(input: Span) -> IResult<Span, Placeholder> {
     many_till(anychar, parse_placeholder)(input)

@@ -13,6 +13,16 @@ build-dev:
     cargo build
 
 ################################################################################
+# Releases
+# Build the binary for a given tag.
+release tag:
+    git stash --include-untracked
+    git switch --detach {{ tag }}
+    just build
+    git switch -
+    git stash pop
+
+################################################################################
 # Tests
 # Run all tests.
 test-all:
@@ -33,3 +43,10 @@ test-lib:
 # Test all tests in tests folder.
 test-units:
     cargo test --tests
+
+################################################################################
+# Miscellaneous
+# Switch to the latest tag.
+[private]
+latest:
+    git switch --detach $(git describe --tags $(git rev-list --tags --max-count=1))

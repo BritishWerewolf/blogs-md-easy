@@ -3,6 +3,9 @@ use std::collections::HashMap;
 use blogs_md_easy::{create_variables, parse_filter, parse_filter_args, parse_filter_key_value, parse_filters, parse_meta_comment, parse_meta_key_value, parse_meta_section, parse_placeholder, parse_placeholder_locations, parse_title, parse_until_eol, parse_variable, render_filter, replace_substring, Filter, Marker, Meta, Selection, Span};
 use nom::combinator::opt;
 
+////////////////////////////////////////////////////////////////////////////////
+// Parsers, variables, and placeholders
+
 #[test]
 fn can_parse_until_eol() {
     let input = Span::new("This is the first line\nThis is the second line.");
@@ -130,6 +133,9 @@ fn can_parse_html_title() {
     assert_eq!(input.fragment(), &"\nMy content");
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Meta Section
+
 #[test]
 fn can_parse_meta_value() {
     let input = Span::new("title = My Title");
@@ -214,6 +220,9 @@ fn can_parse_meta_section_with_comments() {
     assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Placeholders
+
 #[test]
 fn can_parse_placeholders() {
     let input = Span::new("<h1>{{ £title }}\n<p>{{ £content }}");
@@ -268,6 +277,9 @@ fn can_parse_placeholder_uppercase_filter() {
     assert_eq!(placeholders[0].filters, vec![Filter::Uppercase]);
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Placeholders with filters
+
 #[test]
 fn can_render_uppercase_filter() {
     let variable = "hello, world!".to_string();
@@ -312,6 +324,9 @@ fn can_parse_two_placeholder_filters() {
     assert_eq!(placeholders[0].selection.end.offset, 40);
     assert_eq!(placeholders[0].filters, vec![Filter::Uppercase, Filter::Lowercase]);
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Filters
 
 #[test]
 fn can_parse_filter_arg_value() {
@@ -417,6 +432,77 @@ fn can_parse_two_filters() {
         assert_eq!(trail, "...");
     }
 }
+
+#[test]
+fn filter_lowercase_works() {
+    let input = "HELLO, WORLD!".to_string();
+    let output = render_filter(input, &Filter::Lowercase);
+    assert_eq!(output, "hello, world!");
+}
+
+#[test]
+fn filter_uppercase_works() {
+    let input = "hello, world!".to_string();
+    let output = render_filter(input, &Filter::Uppercase);
+    assert_eq!(output, "HELLO, WORLD!");
+}
+
+#[test]
+fn filter_markdown_works() {
+    let input = "# Title\nFirst _paragraph_.  \nNewline.\n\nSecond paragraph with [link](https://example.com).\n\n* Unordered list.\n\n1. Ordered list.".to_string();
+    let output = render_filter(input, &Filter::Markdown);
+    assert_eq!(output, "<h1>Title</h1>\n<p>First <em>paragraph</em>.<br />\nNewline.</p>\n<p>Second paragraph with <a href=\"https://example.com\">link</a>.</p>\n<ul>\n<li>Unordered list.</li>\n</ul>\n<ol>\n<li>Ordered list.</li>\n</ol>");
+}
+
+#[test]
+fn filter_reverse_works() {
+    let input = "Hello, World!".to_string();
+    let output = render_filter(input, &Filter::Reverse);
+    assert_eq!(output, "!dlroW ,olleH");
+}
+
+#[test]
+fn filter_truncate_works() {
+    let input = "Hello, World!".to_string();
+    let output = render_filter(input, &Filter::Truncate { characters: 7, trail: "--".to_string() });
+    assert_eq!(output, "Hello--");
+}
+
+#[test]
+fn filter_truncate_parsed() {
+    // Providing both arguments.
+    let input = Span::new("| truncate = characters: 7, trail: --");
+    let (_, filters) = parse_filters(input).expect("parse both arguments");
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0], Filter::Truncate { characters: 7, trail: "--".to_string() });
+
+    // Providing just characters.
+    let input = Span::new("| truncate = characters: 7");
+    let (_, filters) = parse_filters(input).expect("parse just characters");
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0], Filter::Truncate { characters: 7, trail: "...".to_string() });
+
+    // Providing just trail.
+    let input = Span::new("| truncate = trail: --");
+    let (_, filters) = parse_filters(input).expect("parse just trail");
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0], Filter::Truncate { characters: 20, trail: "--".to_string() });
+
+    // Providing just default value.
+    let input = Span::new("| truncate = 42");
+    let (_, filters) = parse_filters(input).expect("parse default value");
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0], Filter::Truncate { characters: 42, trail: "...".to_string() });
+
+    // Providing no arguments.
+    let input = Span::new("| truncate");
+    let (_, filters) = parse_filters(input).expect("parse no arguments");
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0], Filter::Truncate { characters: 20, trail: "...".to_string() });
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Integration tests
 
 #[test]
 fn can_replace_placeholder_from_meta() {

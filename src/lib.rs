@@ -12,6 +12,7 @@ pub enum Filter {
     Lowercase,
     Uppercase,
     Markdown,
+    Reverse,
     Truncate {
         characters: u8,
         trail: String,
@@ -826,6 +827,7 @@ pub fn render_filter(variable: String, filter: &Filter) -> String {
                 ..Default::default()
             }).unwrap_or_default()
         },
+        Filter::Reverse => variable.chars().rev().collect(),
         Filter::Truncate { characters, trail } => {
             // First we need to account for the length of the trail.
             let characters = characters - (trail.len() as u8);

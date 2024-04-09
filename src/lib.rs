@@ -337,7 +337,7 @@ pub fn is_alphabetic(input: char) -> bool {
 /// assert!(!is_filter_name(' '));
 /// ```
 pub fn is_filter_name(input: char) -> bool {
-    input.is_alphanumeric() || vec!['_'].contains(&input)
+    input.is_alphanumeric() || ['_'].contains(&input)
 }
 
 /// A function that checks if a character is valid for a filter argument name.
@@ -353,7 +353,7 @@ pub fn is_filter_name(input: char) -> bool {
 /// assert!(!is_filter_arg(' '));
 /// ```
 pub fn is_filter_arg(input: char) -> bool {
-    input.is_alphanumeric() || vec!['_'].contains(&input)
+    input.is_alphanumeric() || ['_'].contains(&input)
 }
 
 /// A function that checks if a character is valid for a filter argument name.
@@ -372,7 +372,7 @@ pub fn is_filter_arg(input: char) -> bool {
 /// ```
 pub fn is_filter_value(input: char) -> bool {
     input.is_alphanumeric()
-    || !vec!['|', ',', '{', '}'].contains(&input)
+    || !['|', ',', '{', '}'].contains(&input)
 }
 
 /// Variable names must start with an alphabetic character, then any number of
@@ -659,7 +659,7 @@ pub fn parse_placeholder(input: Span) -> IResult<Span, Placeholder> {
 
         (input, Placeholder {
             name: variable.to_string(),
-            filters: filters,
+            filters,
             selection: Selection::from(start.0, end.1)
         })
     })

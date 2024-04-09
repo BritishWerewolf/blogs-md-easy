@@ -105,11 +105,10 @@ By providing the function after a pipe (`|`) character, we can mutate that varia
 
 These are currently the only supported filters; with their arguments, if available.  
 We'll talk about arguments later on, but for now, know that the argument name is optional and only a value is required.
-* `date` - Parse the string as a date, and return it with the given format.
-    * `format` - **default** - The format that the date will be returned as.
 * `lowercase` - Convert the value to lowercase.
 * `uppercase` - Convert the value to uppercase.
 * `markdown` - Convert the value from Markdown into HTML.
+* `reverse` - Reverse the string order.
 * `truncate` - Truncate the value to the given length, and adds trailing character(s) if the string is truncated.
     * `characters` - **default** - The number of characters to limit a string to.
     * `trail` - The character(s) to add to the end of the string if it is truncated.

@@ -1,18 +1,29 @@
 [![Crates.io Version](https://img.shields.io/crates/v/blogs-md-easy)](https://crates.io/crates/blogs-md-easy)
+[![docs.rs tests](https://img.shields.io/docsrs/blogs-md-easy)](https://docs.rs/blogs-md-easy)
 [![GitHub Repo stars](https://img.shields.io/github/stars/BritishWerewolf/blogs-md-easy)](https://github.com/BritishWerewolf/blogs-md-easy)
 
 # Blogs Made Easy
 Iteratively convert a collection of Markdown files into a respective HTML template.
 
 ## Installation
-Ensure that you have [cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html) installed.  
-Then you can run the following command in your terminal.
+Blogs Made Easy is available as both a binary and a library, both from this package.
+
+In both cases, ensure that you have [cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html) installed.
+
+### Binary
+Open your Terminal, and run the following command.
 ```sh
 $ cargo install blogs-md-easy
 ```
 
+### Library
+Update your `Cargo.toml` by running the following command.
+```sh
+$ cargo add blogs-md-easy
+```
+
 ## Usage
-Below is the help page for the program.
+Below is the help page for the program binary, if you want to read the documentation for the libary, that is available on [docs.rs](https://docs.rs/blogs-md-easy).
 ```
 Iteratively convert a collection of Markdown files into a respective HTML template.
 
@@ -66,11 +77,11 @@ Variables can be reused as many times as required, and will be replaced, providi
 
 Finally, the `£content` variable is automatically generated based on the entire body of the Markdown file.
 
-#### Directives
-It's possible to mutate the placeholders during rendering by providing directives.  
-A directive is just a way of applying a pre-defined function to any placeholder variable.
+#### Filters
+It's possible to mutate the placeholders during rendering by providing filters.  
+A filter is just a way of applying a pre-defined function to any placeholder variable.
 
-Let's use our previous template, and apply a simple directive to the `£title` variable.
+Let's use our previous template, and apply a simple filter to the `£title` variable.
 ```html
 <!DOCTYPE html>
 <html lang="en">
@@ -92,14 +103,20 @@ Let's use our previous template, and apply a simple directive to the `£title` v
 ```
 By providing the function after a pipe (`|`) character, we can mutate that variable in that particular location. This is particularly useful in cases where a placeholder is required multiple times through a template, but the formatting should be different in all cases.
 
-There are currently three supported directives:
+These are currently the only supported filters; with their arguments, if available.  
+We'll talk about arguments later on, but for now, know that the argument name is optional and only a value is required.
+* `date` - Parse the string as a date, and return it with the given format.
+    * `format` - **default** - The format that the date will be returned as.
 * `lowercase` - Convert the value to lowercase.
 * `uppercase` - Convert the value to uppercase.
 * `markdown` - Convert the value from Markdown into HTML.
+* `truncate` - Truncate the value to the given length, and adds trailing character(s) if the string is truncated.
+    * `characters` - **default** - The number of characters to limit a string to.
+    * `trail` - The character(s) to add to the end of the string if it is truncated.
 
-By default, no directives will be provided, unless specified within the template, with the exception of `£content` which will have `markdown` applied.
+By default, no filters will be provided, unless specified within the template, with the exception of `£content` which will have `markdown` applied.
 
-Directives are case insensitive, meaning `| uppercase` is the same as `| UPPERCASE`. They can also be chained together, such as in the following example.
+Filters are case insensitive, meaning `| uppercase` is the same as `| UPPERCASE`. They can also be chained together, such as in the following example.
 ```html
 <!DOCTYPE html>
 <html lang="en">
@@ -120,7 +137,23 @@ Directives are case insensitive, meaning `| uppercase` is the same as `| UPPERCA
 </html>
 ```
 Here we are converting the title to uppercase, and then mutating the value into markdown.  
-Chained directives are evaluated from left to right.
+Chained filters are evaluated from left to right.
+
+#### Filters with arguments
+For some filters, there are optional arguments that can be provided. This is done through a comma separated list after an equals (`=`) sign.  
+Every filter can be provided with just the name, as every argument has been given a detail.
+
+What that means, is that these are all the same thing.
+```html
+<p>{{ £my_paragraph | truncate }}</p>
+<p>{{ £my_paragraph | truncate = 20 }}</p>
+<p>{{ £my_paragraph | truncate = trail: ... }}</p>
+<p>{{ £my_paragraph | truncate = characters: 20, trail: ... }}</p>
+```
+As you can see, you can pick and choose which arguments you want to overwrite - if any.
+
+You'll have also noticed that in the second example we didn't provide a key!  
+This is because, for each filter that takes arguments, one argument will be considered the "default" argument. As a result, if you provide a value, with no argument name, then this will be set to the pre-determined default argument for that filter.
 
 ### Markdowns
 [Markdowns](https://daringfireball.net/projects/markdown) are simple text files that contain any text, and an optional `meta` section.
@@ -228,8 +261,9 @@ Currently, a new line is placed before all headings (from `h2` to to `h6`), but 
 
 ## Todo List
 - [ ] Add if statements to render content based on a condition.
-- [x] Add directives to placeholders.
-    - [ ] Add directives that support arguments.
+- [x] Add filters to placeholders.
+    - [x] Add filters that support arguments.
+    - [ ] Add escape characters for argument values.
 - [ ] Add tag filter to prevent parsing scripts.
 - [ ] Add better handling for errors in meta sections.
     - For example if a key is passed without a value, then no meta values are parsed.

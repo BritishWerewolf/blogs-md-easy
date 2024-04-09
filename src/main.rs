@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use blogs_md_easy::{create_variables, parse_meta_section, parse_placeholder_locations, render_directive, replace_substring, Span};
+use blogs_md_easy::{create_variables, parse_meta_section, parse_placeholder_locations, render_filter, replace_substring, Span};
 use clap::Parser;
 use std::{collections::HashMap, fs, path::PathBuf};
 
@@ -77,8 +77,8 @@ fn main() -> Result<(), anyhow::Error> {
                 // Used to deref the variable.
                 let mut variable = variable.to_owned();
 
-                for directive in &placeholder.directives {
-                    variable = render_directive(variable, directive);
+                for filter in &placeholder.filters {
+                    variable = render_filter(variable, filter);
                 }
 
                 html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &variable);

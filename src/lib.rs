@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use std::collections::HashMap;
-use nom::{branch::alt, bytes::complete::{tag, take_till, take_until, take_while, take_while_m_n}, character::complete::{alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till}, sequence::{delimited, preceded, separated_pair, terminated, tuple}, IResult, Parser};
+use nom::{branch::alt, bytes::complete::{tag, take_till, take_until, take_while, take_while_m_n}, character::complete::{alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till, separated_list1}, sequence::{delimited, preceded, separated_pair, terminated, tuple}, IResult, Parser};
 use nom_locate::LocatedSpan;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -8,20 +8,24 @@ use nom_locate::LocatedSpan;
 pub type Span<'a> = LocatedSpan<&'a str>;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Directive {
+pub enum Filter {
     Date {
         format: String,
     },
-    Uppercase,
     Lowercase,
+    Uppercase,
     Markdown,
+    Truncate {
+        characters: u8,
+        trail: String,
+    }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Meta {
     pub key: String,
     pub value: String,
-    pub directives: Vec<Directive>,
+    pub filters: Vec<Filter>,
 }
 
 impl Meta {
@@ -29,7 +33,7 @@ impl Meta {
         Self {
             key: key.trim().to_string(),
             value: value.trim().to_string(),
-            directives: Vec::new(),
+            filters: Vec::new(),
         }
     }
 }
@@ -81,7 +85,7 @@ impl Selection {
 pub struct Placeholder {
     pub name: String,
     pub selection: Selection,
-    pub directives: Vec<Directive>,
+    pub filters: Vec<Filter>,
 }
 
 
@@ -90,6 +94,27 @@ pub struct Placeholder {
 /// Parse any character until the end of the line.
 /// This will return all characters, except the newline which will be consumed
 /// and discarded.
+///
+/// # Examples
+/// When there is no newline.
+/// ```rust
+/// use blogs_md_easy::{parse_until_eol, Span};
+///
+/// let input = Span::new("Hello, World!");
+/// let (input, until_eol) = parse_until_eol(input).unwrap();
+/// assert_eq!(input.fragment(), &"");
+/// assert_eq!(until_eol.fragment(), &"Hello, World!");
+/// ```
+///
+/// There is a newline.
+/// ```rust
+/// use blogs_md_easy::{parse_until_eol, Span};
+///
+/// let input = Span::new("Hello, World!\nThis is Sparta!");
+/// let (input, until_eol) = parse_until_eol(input).unwrap();
+/// assert_eq!(input.fragment(), &"This is Sparta!");
+/// assert_eq!(until_eol.fragment(), &"Hello, World!");
+/// ```
 pub fn parse_until_eol(input: Span) -> IResult<Span, Span> {
     terminated(
         alt((take_until("\n"), rest)),
@@ -229,7 +254,7 @@ pub fn parse_meta_line(input: Span) -> IResult<Span, Option<Meta>> {
 ///     Some(Meta {
 ///         key: "publish_date".to_string(),
 ///         value: "2021-01-01".to_string(),
-///         directives: vec![],
+///         filters: vec![],
 ///     }),
 /// ]);
 /// assert_eq!(input.fragment(), &"# Markdown title");
@@ -287,7 +312,7 @@ pub fn parse_title(input: Span) -> IResult<Span, Span> {
 
 /// Rewrite of the nom::is_alphabetic function that takes a char instead.
 ///
-/// # Examples
+/// # Example
 /// ```rust
 /// use blogs_md_easy::is_alphabetic;
 ///
@@ -298,6 +323,58 @@ pub fn parse_title(input: Span) -> IResult<Span, Span> {
 /// ```
 pub fn is_alphabetic(input: char) -> bool {
     vec!['a'..='z', 'A'..='Z'].into_iter().flatten().any(|c| c == input)
+}
+
+/// A function that checks if a character is valid for a filter name.
+/// The filter name is the value before the `=`.
+///
+/// # Example
+/// ```rust
+/// use blogs_md_easy::is_filter_name;
+///
+/// assert!(is_filter_name('a'));
+/// assert!(is_filter_name('A'));
+/// assert!(is_filter_name('1'));
+/// assert!(!is_filter_name('-'));
+/// assert!(!is_filter_name(' '));
+/// ```
+pub fn is_filter_name(input: char) -> bool {
+    input.is_alphanumeric() || vec!['_'].contains(&input)
+}
+
+/// A function that checks if a character is valid for a filter argument name.
+///
+/// # Example
+/// ```rust
+/// use blogs_md_easy::is_filter_arg;
+///
+/// assert!(is_filter_arg('a'));
+/// assert!(is_filter_arg('A'));
+/// assert!(is_filter_arg('1'));
+/// assert!(!is_filter_arg('-'));
+/// assert!(!is_filter_arg(' '));
+/// ```
+pub fn is_filter_arg(input: char) -> bool {
+    input.is_alphanumeric() || vec!['_'].contains(&input)
+}
+
+/// A function that checks if a character is valid for a filter argument name.
+///
+/// # Example
+/// ```rust
+/// use blogs_md_easy::is_filter_value;
+///
+/// assert!(is_filter_value('a'));
+/// assert!(is_filter_value('A'));
+/// assert!(is_filter_value('1'));
+/// assert!(!is_filter_value('|'));
+/// assert!(!is_filter_value(','));
+/// assert!(!is_filter_value('{'));
+/// assert!(!is_filter_value('}'));
+/// ```
+pub fn is_filter_value(input: char) -> bool {
+    input.is_alphanumeric()
+    || !vec!['|', ',', '{', '}'].contains(&input)
 }
 
 /// Variable names must start with an alphabetic character, then any number of
@@ -354,51 +431,195 @@ pub fn parse_variable(input: Span) -> IResult<Span, Span> {
     )(input)
 }
 
-/// Parse a placeholder directive, which is any alphabetic character.
-/// Optionally, there can be arguments provided following a colon.
+/// Parser that will parse exclusively the key-values from after a filter.  \
+/// This will return the key (before the `:`) and the value (after the `:`). It
+/// will also return a key of `_` if no key was provided.
+///
+/// # Returns
+/// A tuple of the filter name and a vector of key-value pairs.  \
+/// If only a value was provided, then the key will be `_`.
 ///
 /// # Examples
-/// A simple directive with no arguments.
+/// Ensure that a key-value pair, separated by a colon, can be parsed into a
+/// tuple.
 /// ```rust
-/// use blogs_md_easy::{parse_placeholder_directive_enum, Directive, Span};
+/// use blogs_md_easy::{parse_filter_key_value, Span};
 ///
-/// let input = Span::new("uppercase");
-/// let (_, directive) = parse_placeholder_directive_enum(input).unwrap();
-/// assert_eq!(directive, Some(Directive::Uppercase));
+/// let input = Span::new("trail: ...");
+/// let (_, args) = parse_filter_key_value(input).unwrap();
+/// assert_eq!(args, ("trail", "..."));
 /// ```
-pub fn parse_placeholder_directive_enum(input: Span) -> IResult<Span, Option<Directive>> {
-    let (input, name) = take_while(is_alphabetic)(input)?;
-    let (input, _) = opt(tuple((multispace0, tag(":"), multispace0)))(input)?;
-
-    let (input, arg) = opt(take_while(|c| c != '|' && c != '}'))(input)?;
-
-    let directive = match name.to_ascii_lowercase().as_str() {
-        "date" => arg.map(|arg| Directive::Date {
-            format: arg.to_string()
-        }),
-        "lowercase" => Some(Directive::Lowercase),
-        "uppercase" => Some(Directive::Uppercase),
-        "markdown"  => Some(Directive::Markdown),
-        _ => None,
-    };
-    Ok((input, directive))
+///
+/// Ensure that a single value can be parsed into a tuple with a key of `_`.
+/// ```rust
+/// use blogs_md_easy::{parse_filter_key_value, Span};
+///
+/// let input = Span::new("20");
+/// let (_, args) = parse_filter_key_value(input).unwrap();
+/// assert_eq!(args, ("_", "20"));
+/// ```
+pub fn parse_filter_key_value(input: Span) -> IResult<Span, (&str, &str)> {
+    alt((
+        // This matches a key-value separated by a colon.
+        // Example: `truncate = characters: 20`
+        separated_pair(
+            take_while(is_filter_arg).map(|arg: Span| *arg.fragment()),
+            tuple((space0, tag(":"), space0)),
+            take_while(is_filter_value).map(|value: Span| *value.fragment()),
+        ),
+        // But it's also possible to just provide a value.
+        // Example: `truncate = 20`
+        take_while(is_filter_value)
+        .map(|value: Span| ("_", *value.fragment()))
+    ))(input)
 }
 
-/// Parses the placeholder directive preceded by a pipe character.
+/// Parser that will parse exclusively the key-values from after a filter.  \
+/// The signature of a filter is `filter_name = key1: value1, key2: value2,...`,
+/// or just `filter_name = value`.
 ///
-/// # Example
+/// # Examples
+/// Ensure that a key-value pair, separated by a colon, can be parsed into a
+/// tuple.
 /// ```rust
-/// use blogs_md_easy::{parse_placeholder_directive, Directive, Span};
+/// use blogs_md_easy::{parse_filter_args, Span};
 ///
-/// let input = Span::new(" | uppercase }}");
-/// let (input, placeholder) = parse_placeholder_directive(input).unwrap();
-/// assert_eq!(placeholder, Some(Directive::Uppercase));
-/// assert_eq!(input.fragment(), &"}}");
+/// let input = Span::new("characters: 20, trail: ...");
+/// let (_, args) = parse_filter_args(input).unwrap();
+/// assert_eq!(args, vec![
+///     ("characters", "20"),
+///     ("trail", "..."),
+/// ]);
 /// ```
-pub fn parse_placeholder_directive(input: Span) -> IResult<Span, Option<Directive>> {
+///
+/// Ensure that a single value can be parsed into a tuple with a key of `_`.
+/// ```rust
+/// use blogs_md_easy::{parse_filter_args, Span};
+///
+/// let input = Span::new("20");
+/// let (_, args) = parse_filter_args(input).unwrap();
+/// assert_eq!(args, vec![
+///     ("_", "20")
+/// ]);
+/// ```
+pub fn parse_filter_args(input: Span) -> IResult<Span, Vec<(&str, &str)>> {
+    separated_list1(
+        tuple((space0, tag(","), space0)),
+        parse_filter_key_value
+    )(input)
+}
+
+/// Parse a filter, and optionally its arguments if present.
+///
+/// # Examples
+/// A filter with no arguments.
+/// ```rust
+/// use blogs_md_easy::{parse_filter, Filter, Span};
+///
+/// let input = Span::new("lowercase");
+/// let (_, filter) = parse_filter(input).unwrap();
+/// assert!(matches!(filter, Filter::Lowercase));
+/// ```
+///
+/// A filter with just a value, but no key.  \
+/// This will be parsed as a key of `_`, which will then be set to a key of the
+/// given enum Struct variant that is deemed the default.  \
+/// In the case of `Filter::Date`, this will be the `format`.
+/// ```rust
+/// use blogs_md_easy::{parse_filter, Filter, Span};
+///
+/// let input = Span::new("date = yyyy-mm-dd");
+/// let (_, filter) = parse_filter(input).unwrap();
+/// assert_eq!(filter, Filter::Date { format: "yyyy-mm-dd".to_string() });
+/// ```
+///
+/// A filter with multiple arguments, and given keys.
+/// ```rust
+/// use blogs_md_easy::{parse_filter, Filter, Span};
+///
+/// let input = Span::new("truncate = characters: 15, trail:...");
+/// let (_, filter) = parse_filter(input).unwrap();
+/// assert!(matches!(filter, Filter::Truncate { .. }));
+/// assert_eq!(filter, Filter::Truncate {
+///     characters: 15,
+///     trail: "...".to_string(),
+/// });
+/// ```
+///
+/// For some filters, default values are provided, if not present.
+/// ```rust
+/// use blogs_md_easy::{parse_filter, Filter, Span};
+///
+/// let input = Span::new("truncate = trail:...");
+/// let (_, filter) = parse_filter(input).unwrap();
+/// assert!(matches!(filter, Filter::Truncate { .. }));
+/// assert_eq!(filter, Filter::Truncate {
+///     characters: 20,
+///     trail: "...".to_string(),
+/// });
+/// ```
+pub fn parse_filter(input: Span) -> IResult<Span, Filter> {
+    separated_pair(
+        take_while(is_filter_name),
+        opt(tuple((space0, tag("="), space0))),
+        opt(parse_filter_args)
+    )(input)
+    .map(|(input, (name, args))| {
+        let args: HashMap<&str, &str> = args.unwrap_or_default().into_iter().collect();
+
+        (input, match name.fragment().to_lowercase().trim() {
+            "date" => Filter::Date {
+                format: args.get("format").unwrap_or(
+                    args.get("_").unwrap_or(&"YYYY-MM-DD")
+                ).to_string()
+            },
+            "lowercase" => Filter::Lowercase,
+            "uppercase" => Filter::Uppercase,
+            "markdown" => Filter::Markdown,
+            "truncate" => Filter::Truncate {
+                // Attempt to get the characters, but if we can't then we use
+                // the unnamed value, defined as "_".
+                characters: args.get("characters").unwrap_or(
+                    args.get("_").unwrap_or(&"20")
+                ).parse::<u8>().unwrap_or(20),
+                trail: args.get("trail").unwrap_or(&"...").to_string()
+            },
+            _ => unreachable!(),
+        })
+    })
+}
+
+/// Parsers a list of Filters.
+///
+/// # Examples
+/// A single filter.
+/// ```rust
+/// use blogs_md_easy::{parse_filters, Filter, Span};
+///
+/// // As in {{ £my_variable | lowercase }}
+/// let input = Span::new("| lowercase");
+/// let (_, filters) = parse_filters(input).unwrap();
+/// assert!(matches!(filters[0], Filter::Lowercase));
+/// ```
+///
+/// Multiple filters chained together with `|`.
+/// ```rust
+/// use blogs_md_easy::{parse_filters, Filter, Span};
+///
+/// // As in {{ £my_variable | lowercase | truncate = trail: ..! }}
+/// let input = Span::new("| lowercase | truncate = trail: ..!");
+/// let (_, filters) = parse_filters(input).unwrap();
+/// assert!(matches!(filters[0], Filter::Lowercase));
+/// assert!(matches!(filters[1], Filter::Truncate { .. }));
+/// assert_eq!(filters[1], Filter::Truncate {
+///     characters: 20,
+///     trail: "..!".to_string(),
+/// });
+/// ```
+pub fn parse_filters(input: Span) -> IResult<Span, Vec<Filter>> {
     preceded(
-        tuple((multispace0, tag("|"), multispace0)),
-        parse_placeholder_directive_enum
+        tuple((space0, tag("|"), space0)),
+        separated_list1(tuple((space0, tag("|"), space0)), parse_filter)
     )(input)
 }
 
@@ -432,18 +653,20 @@ pub fn parse_placeholder(input: Span) -> IResult<Span, Placeholder> {
     tuple((
         tuple((tag("{{"), multispace0)),
         parse_variable,
-        many0(parse_placeholder_directive),
+        opt(parse_filters),
         tuple((multispace0, tag("}}"))),
     ))(input)
-    .map(|(input, (start, variable, mut directives, end))| {
+    .map(|(input, (start, variable, filters, end))| {
+        let mut filters = filters.unwrap_or_default();
+
         // By default, £content will always be parsed as Markdown.
-        if variable.to_ascii_lowercase().as_str() == "content" && !directives.contains(&Some(Directive::Markdown)) {
-            directives.push(Some(Directive::Markdown));
+        if variable.to_ascii_lowercase().as_str() == "content" && !filters.contains(&Filter::Markdown) {
+            filters.push(Filter::Markdown);
         }
 
         (input, Placeholder {
             name: variable.to_string(),
-            directives: directives.into_iter().flatten().collect(),
+            filters: filters,
             selection: Selection::from(start.0, end.1)
         })
     })
@@ -578,21 +801,21 @@ pub fn create_variables(markdown: Span, meta_values: Vec<Option<Meta>>) -> Resul
     Ok(variables)
 }
 
-/// Take a variable, and run it through a Directive function to get the new
+/// Take a variable, and run it through a Filter function to get the new
 /// output.
 ///
 /// # Example
 /// ```rust
-/// use blogs_md_easy::{render_directive, Directive};
+/// use blogs_md_easy::{render_filter, Filter};
 ///
 /// let variable = "hello, world!".to_string();
-/// assert_eq!("HELLO, WORLD!", render_directive(variable, &Directive::Uppercase));
+/// assert_eq!("HELLO, WORLD!", render_filter(variable, &Filter::Uppercase));
 /// ```
-pub fn render_directive(variable: String, directive: &Directive) -> String {
-    match directive {
-        Directive::Lowercase => variable.to_lowercase(),
-        Directive::Uppercase => variable.to_uppercase(),
-        Directive::Markdown  => {
+pub fn render_filter(variable: String, filter: &Filter) -> String {
+    match filter {
+        Filter::Lowercase => variable.to_lowercase(),
+        Filter::Uppercase => variable.to_uppercase(),
+        Filter::Markdown  => {
             markdown::to_html_with_options(&variable, &markdown::Options {
                 compile: markdown::CompileOptions {
                     allow_dangerous_html: true,
@@ -601,7 +824,7 @@ pub fn render_directive(variable: String, directive: &Directive) -> String {
                 },
                 ..Default::default()
             }).unwrap_or_default()
-        }
+        },
         _ => unimplemented!(),
     }
 }

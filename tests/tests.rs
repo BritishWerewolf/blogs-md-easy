@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use blogs_md_easy::{create_variables, parse_meta_comment, parse_meta_key_value, parse_meta_section, parse_placeholder, parse_placeholder_directive_enum, parse_placeholder_locations, parse_title, parse_until_eol, parse_variable, render_directive, replace_substring, Directive, Marker, Meta, Selection, Span};
+use blogs_md_easy::{create_variables, parse_filter, parse_filter_args, parse_filter_key_value, parse_filters, parse_meta_comment, parse_meta_key_value, parse_meta_section, parse_placeholder, parse_placeholder_locations, parse_title, parse_until_eol, parse_variable, render_filter, replace_substring, Filter, Marker, Meta, Selection, Span};
 use nom::combinator::opt;
 
 #[test]
@@ -243,8 +243,8 @@ fn can_parse_when_no_placeholders() {
 }
 
 #[test]
-fn can_parse_placeholder_with_no_directive() {
-    // Directives are case insensitive.
+fn can_parse_placeholder_with_no_filter() {
+    // Filters are case insensitive.
     let input = Span::new("<p>{{ £variable }}</p>");
     let placeholders = parse_placeholder_locations(input).expect("to parse placeholder");
 
@@ -252,12 +252,12 @@ fn can_parse_placeholder_with_no_directive() {
     assert_eq!(placeholders[0].name, "variable".to_string());
     assert_eq!(placeholders[0].selection.start.offset, 3);
     assert_eq!(placeholders[0].selection.end.offset, 19);
-    assert_eq!(placeholders[0].directives, vec![]);
+    assert_eq!(placeholders[0].filters, vec![]);
 }
 
 #[test]
-fn can_parse_placeholder_uppercase_directive() {
-    // Directives are case insensitive.
+fn can_parse_placeholder_uppercase_filter() {
+    // Filters are case insensitive.
     let input = Span::new("<p>{{ £variable | UPPERCASE }}</p>");
     let placeholders = parse_placeholder_locations(input).expect("to parse placeholder");
 
@@ -265,18 +265,18 @@ fn can_parse_placeholder_uppercase_directive() {
     assert_eq!(placeholders[0].name, "variable".to_string());
     assert_eq!(placeholders[0].selection.start.offset, 3);
     assert_eq!(placeholders[0].selection.end.offset, 31);
-    assert_eq!(placeholders[0].directives, vec![Directive::Uppercase]);
+    assert_eq!(placeholders[0].filters, vec![Filter::Uppercase]);
 }
 
 #[test]
-fn can_render_uppercase_directive() {
+fn can_render_uppercase_filter() {
     let variable = "hello, world!".to_string();
-    let variable = render_directive(variable, &Directive::Uppercase);
+    let variable = render_filter(variable, &Filter::Uppercase);
     assert_eq!("HELLO, WORLD!", variable);
 }
 
 #[test]
-fn can_parse_placeholder_lowercase_directive() {
+fn can_parse_placeholder_lowercase_filter() {
     let input = Span::new("<p>{{ £variable | lowercase }}</p>");
     let placeholders = parse_placeholder_locations(input).expect("to parse placeholder");
 
@@ -284,25 +284,25 @@ fn can_parse_placeholder_lowercase_directive() {
     assert_eq!(placeholders[0].name, "variable".to_string());
     assert_eq!(placeholders[0].selection.start.offset, 3);
     assert_eq!(placeholders[0].selection.end.offset, 31);
-    assert_eq!(placeholders[0].directives, vec![Directive::Lowercase]);
+    assert_eq!(placeholders[0].filters, vec![Filter::Lowercase]);
 }
 
 #[test]
-fn can_render_lowercase_directive() {
+fn can_render_lowercase_filter() {
     let variable = "HELLO, WORLD!".to_string();
-    let variable = render_directive(variable, &Directive::Lowercase);
+    let variable = render_filter(variable, &Filter::Lowercase);
     assert_eq!("hello, world!", variable);
 }
 
 #[test]
-fn can_render_markdown_directive() {
+fn can_render_markdown_filter() {
     let variable = "# Title\nParagraph\n\n[link](https://example.com)".to_string();
-    let variable = render_directive(variable, &Directive::Markdown);
+    let variable = render_filter(variable, &Filter::Markdown);
     assert_eq!("<h1>Title</h1>\n<p>Paragraph</p>\n<p><a href=\"https://example.com\">link</a></p>", variable);
 }
 
 #[test]
-fn can_parse_two_placeholder_directives() {
+fn can_parse_two_placeholder_filters() {
     let input = Span::new("<p>{{ £title | uppercase | lowercase }}</p>");
     let placeholders = parse_placeholder_locations(input).expect("parse placeholders");
 
@@ -310,18 +310,112 @@ fn can_parse_two_placeholder_directives() {
     assert_eq!(placeholders[0].name, "title".to_string());
     assert_eq!(placeholders[0].selection.start.offset, 3);
     assert_eq!(placeholders[0].selection.end.offset, 40);
-    assert_eq!(placeholders[0].directives, vec![Directive::Uppercase, Directive::Lowercase]);
+    assert_eq!(placeholders[0].filters, vec![Filter::Uppercase, Filter::Lowercase]);
 }
 
 #[test]
-fn can_parse_placeholder_directive_with_arg() {
-    let input = Span::new("date: dd-mmm-yyyy");
-    let (_, directive) = parse_placeholder_directive_enum(input).expect("to parse directive");
-    assert!(directive.is_some());
-    let directive = directive.unwrap();
-    assert_eq!(directive, Directive::Date {
-        format: "dd-mmm-yyyy".to_string()
-    });
+fn can_parse_filter_arg_value() {
+    let input = Span::new("characters: 20");
+    let (input, (arg, value)) = parse_filter_key_value(input).expect("parse key-value");
+
+    assert_eq!(input.fragment(), &"");
+    assert_eq!(arg, "characters");
+    assert_eq!(value, "20");
+}
+
+#[test]
+fn can_parse_filter_arg_value_vec() {
+    let input = Span::new("characters: 20, trail: ...");
+    let (input, args) = parse_filter_args(input).expect("parse args");
+
+    assert_eq!(input.fragment(), &"");
+    assert_eq!(args, vec![
+        ("characters", "20"),
+        ("trail", "...")
+    ]);
+}
+
+#[test]
+fn can_parse_filter_with_no_args() {
+    let input = Span::new("lowercase");
+    let (input, filter) = parse_filter(input).expect("parse filter");
+
+    assert_eq!(input.fragment(), &"");
+    assert!(matches!(filter, Filter::Lowercase));
+}
+
+#[test]
+fn can_parse_filter_with_args() {
+    let input = Span::new("truncate = characters: 15, trail: ...");
+    let (input, filter) = parse_filter(input).expect("parse filter");
+
+    assert_eq!(input.fragment(), &"");
+    assert!(matches!(filter, Filter::Truncate { .. }));
+
+    if let Filter::Truncate { characters, trail } = filter {
+        assert_eq!(characters, 15);
+        assert_eq!(trail, "...");
+    }
+}
+
+#[test]
+fn can_parse_filter_with_defaults() {
+    let input = Span::new("truncate = trail: ...");
+    let (input, filter) = parse_filter(input).expect("parse filter");
+
+    assert_eq!(input.fragment(), &"");
+    assert!(matches!(filter, Filter::Truncate { .. }));
+
+    if let Filter::Truncate { characters, trail } = filter {
+        assert_eq!(characters, 20);
+        assert_eq!(trail, "...");
+    }
+}
+
+#[test]
+fn can_parse_filter_with_just_value() {
+    let input = Span::new("truncate = 15");
+    let (input, filter) = parse_filter(input).expect("parse filter");
+
+    assert_eq!(input.fragment(), &"");
+    assert!(matches!(filter, Filter::Truncate { .. }));
+
+    if let Filter::Truncate { characters, trail } = filter {
+        assert_eq!(characters, 15);
+        assert_eq!(trail, "...");
+    }
+}
+
+#[test]
+fn can_parse_filter_with_args_not_provided() {
+    let input = Span::new("truncate");
+    let (input, filter) = parse_filter(input).expect("parse filter");
+
+    assert_eq!(input.fragment(), &"");
+    assert!(matches!(filter, Filter::Truncate { .. }));
+
+    if let Filter::Truncate { characters, trail } = filter {
+        assert_eq!(characters, 20);
+        assert_eq!(trail, "...");
+    }
+}
+
+#[test]
+fn can_parse_two_filters() {
+    let input = Span::new("| truncate = characters: 20 | lowercase");
+    let (input, filters) = parse_filters(input).expect("parse filters");
+
+    assert_eq!(input.fragment(), &"");
+    assert_eq!(filters.len(), 2);
+    dbg!(&filters);
+
+    assert!(matches!(filters[0], Filter::Truncate { .. }));
+    assert!(matches!(filters[1], Filter::Lowercase));
+
+    if let Filter::Truncate { characters, trail } = &filters[0] {
+        assert_eq!(characters, &20);
+        assert_eq!(trail, "...");
+    }
 }
 
 #[test]
@@ -370,8 +464,8 @@ fn can_replace_placeholder_from_meta() {
             // Used to deref the variable.
             let mut variable = variable.to_owned();
 
-            for directive in &placeholder.directives {
-                variable = render_directive(variable, directive);
+            for filter in &placeholder.filters {
+                variable = render_filter(variable, filter);
             }
 
             html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &variable);

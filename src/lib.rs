@@ -246,18 +246,18 @@ pub fn parse_meta_line(input: Span) -> IResult<Span, Option<Meta>> {
 ///
 /// let input = Span::new(":meta\n// This is the published date\npublish_date = 2021-01-01\n:meta\n# Markdown title");
 /// let (input, meta) = parse_meta_section(input).unwrap();
-/// assert_eq!(meta.len(), 2);
+/// // Comments are ignored and removed from the Vector.
+/// assert_eq!(meta.len(), 1);
 /// assert_eq!(meta, vec![
-///     None,
-///     Some(Meta {
+///     Meta {
 ///         key: "publish_date".to_string(),
 ///         value: "2021-01-01".to_string(),
 ///         filters: vec![],
-///     }),
+///     },
 /// ]);
 /// assert_eq!(input.fragment(), &"# Markdown title");
 /// ```
-pub fn parse_meta_section(input: Span) -> IResult<Span, Vec<Option<Meta>>> {
+pub fn parse_meta_section(input: Span) -> IResult<Span, Vec<Meta>> {
     alt((
         // I can't think of a more elegant solution for ensuring the pairs match
         // one another. The previous solution could open with `:meta` and close
@@ -273,6 +273,13 @@ pub fn parse_meta_section(input: Span) -> IResult<Span, Vec<Option<Meta>>> {
             tuple((multispace0, tag("</meta>"), multispace0)),
         ),
     ))(input)
+    // Filter out None values, leaving only legitimate meta values.
+    .map(|(input, res)| {
+        // When calling flatten on Option<> types, None values are considered
+        // empty iterators and removed, Some values are considered iterators
+        // with a single element and are therefore unwrapped and returned.
+        (input, res.into_iter().flatten().collect())
+    })
 }
 
 /// Parse the title of the document. This is either a Markdown title or an HTML
@@ -372,7 +379,7 @@ pub fn is_filter_arg(input: char) -> bool {
 /// ```
 pub fn is_filter_value(input: char) -> bool {
     input.is_alphanumeric()
-    || !['|', ',', '{', '}'].contains(&input)
+    || ![' ', '|', ',', '{', '}'].contains(&input)
 }
 
 /// Variable names must start with an alphabetic character, then any number of
@@ -779,16 +786,10 @@ pub fn replace_substring(original: &str, start: usize, end: usize, replacement: 
 /// assert_eq!(variables.get("author").unwrap(), "John Doe");
 /// assert_eq!(variables.get("content").unwrap(), "# Markdown title\nContent paragraph");
 /// ```
-pub fn create_variables(markdown: Span, meta_values: Vec<Option<Meta>>) -> Result<HashMap<String, String>, anyhow::Error> {
+pub fn create_variables(markdown: Span, meta_values: Vec<Meta>) -> Result<HashMap<String, String>, anyhow::Error> {
     let mut variables: HashMap<String, String> = meta_values
         .into_iter()
-        .filter_map(|meta| {
-            if let Some(meta) = meta {
-                Some((meta.key.to_owned(), meta.value.to_owned()))
-            } else {
-                None
-            }
-        })
+        .map(|meta| (meta.key.to_owned(), meta.value.to_owned()))
         .collect();
 
     // Make sure that we have a title and content variable.
@@ -825,7 +826,7 @@ pub fn create_variables(markdown: Span, meta_values: Vec<Option<Meta>>) -> Resul
 /// use blogs_md_easy::{render_filter, Filter};
 ///
 /// let variable = "hello, world!".to_string();
-/// assert_eq!("he...", render_filter(variable, &Filter::Truncate { characters: 5, trail: "...".to_string() }));
+/// assert_eq!("hello...", render_filter(variable, &Filter::Truncate { characters: 5, trail: "...".to_string() }));
 /// ```
 pub fn render_filter(variable: String, filter: &Filter) -> String {
     match filter {
@@ -843,15 +844,13 @@ pub fn render_filter(variable: String, filter: &Filter) -> String {
         },
         Filter::Reverse => variable.chars().rev().collect(),
         Filter::Truncate { characters, trail } => {
-            // First we need to account for the length of the trail.
-            let characters = characters - (trail.len() as u8);
-            let mut variable = variable.to_string();
+            let mut new_variable = variable.to_string();
+            new_variable.truncate(*characters as usize);
             // Now truncate and append the trail.
-            if (variable.len() as u8) > characters {
-                variable.truncate(characters as usize);
-                variable.push_str(trail);
+            if (variable.len() as u8) > *characters {
+                new_variable.push_str(trail);
             }
-            variable
+            new_variable
         },
     }
 }

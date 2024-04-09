@@ -165,8 +165,8 @@ fn can_parse_metadata_colon() {
     let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
 
     assert_eq!(meta, vec![
-        Some(Meta::new("title", "Meta title")),
-        Some(Meta::new("author", "John Doe")),
+        Meta::new("title", "Meta title"),
+        Meta::new("author", "John Doe"),
     ]);
 
     assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
@@ -178,8 +178,8 @@ fn can_parse_metadata_tag() {
     let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
 
     assert_eq!(meta, vec![
-        Some(Meta::new("title", "Meta title")),
-        Some(Meta::new("author", "John Doe")),
+        Meta::new("title", "Meta title"),
+        Meta::new("author", "John Doe"),
     ]);
 
     assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
@@ -207,10 +207,7 @@ fn can_parse_meta_section_with_comments() {
     let input = Span::new(":meta\n// This is an author\nauthor = John Doe\n# This is the publish date\npublish_date = 2024-01-01\n:meta\n# Markdown title\nThis is my content");
     let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
 
-    // We get None, Some, None, Some.
-    assert!(meta.len() == 4);
-    // Then filter and unwrap.
-    let meta: Vec<Meta> = meta.into_iter().flatten().collect();
+    assert!(meta.len() == 2);
 
     assert_eq!(meta, vec![
         Meta::new("author", "John Doe"),
@@ -281,14 +278,19 @@ fn can_parse_placeholder_uppercase_filter() {
 // Placeholders with filters
 
 #[test]
-fn can_render_uppercase_filter() {
-    let variable = "hello, world!".to_string();
-    let variable = render_filter(variable, &Filter::Uppercase);
-    assert_eq!("HELLO, WORLD!", variable);
+fn can_parse_placeholder_with_filter_in_uppercase() {
+    let input = Span::new("<p>{{ £variable | UPPERCASE }}</p>");
+    let placeholders = parse_placeholder_locations(input).expect("to parse placeholder");
+
+    assert_eq!(placeholders.len(), 1);
+    assert_eq!(placeholders[0].name, "variable".to_string());
+    assert_eq!(placeholders[0].selection.start.offset, 3);
+    assert_eq!(placeholders[0].selection.end.offset, 31);
+    assert_eq!(placeholders[0].filters, vec![Filter::Uppercase]);
 }
 
 #[test]
-fn can_parse_placeholder_lowercase_filter() {
+fn can_parse_placeholder_with_filter_in_lowercase() {
     let input = Span::new("<p>{{ £variable | lowercase }}</p>");
     let placeholders = parse_placeholder_locations(input).expect("to parse placeholder");
 
@@ -297,20 +299,6 @@ fn can_parse_placeholder_lowercase_filter() {
     assert_eq!(placeholders[0].selection.start.offset, 3);
     assert_eq!(placeholders[0].selection.end.offset, 31);
     assert_eq!(placeholders[0].filters, vec![Filter::Lowercase]);
-}
-
-#[test]
-fn can_render_lowercase_filter() {
-    let variable = "HELLO, WORLD!".to_string();
-    let variable = render_filter(variable, &Filter::Lowercase);
-    assert_eq!("hello, world!", variable);
-}
-
-#[test]
-fn can_render_markdown_filter() {
-    let variable = "# Title\nParagraph\n\n[link](https://example.com)".to_string();
-    let variable = render_filter(variable, &Filter::Markdown);
-    assert_eq!("<h1>Title</h1>\n<p>Paragraph</p>\n<p><a href=\"https://example.com\">link</a></p>", variable);
 }
 
 #[test]
@@ -492,11 +480,11 @@ fn filter_reverse_works() {
 fn filter_truncate_works() {
     let input = "Hello, World!".to_string();
     let output = render_filter(input, &Filter::Truncate { characters: 7, trail: "--".to_string() });
-    assert_eq!(output, "Hello--");
+    assert_eq!(output, "Hello, --");
 }
 
 #[test]
-fn filter_truncate_parsed() {
+fn can_parse_truncate_filter() {
     // Providing both arguments.
     let input = Span::new("| truncate = characters: 7, trail: --");
     let (_, filters) = parse_filters(input).expect("parse both arguments");
@@ -526,6 +514,45 @@ fn filter_truncate_parsed() {
     let (_, filters) = parse_filters(input).expect("parse no arguments");
     assert_eq!(filters.len(), 1);
     assert_eq!(filters[0], Filter::Truncate { characters: 20, trail: "...".to_string() });
+}
+
+#[test]
+fn can_render_truncate_filter() {
+    // Providing both arguments.
+    let input = Span::new("{{ £title | truncate = characters: 7, trail: -- }}");
+    let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
+    let title = "Hello, World!".to_string();
+    assert_eq!(render_filter(title, &placeholder.filters[0]), "Hello, --".to_string());
+
+    // Providing just characters.
+    let input = Span::new("{{ £title | truncate = characters: 7 }}");
+    let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
+    let title = "Hello, World!".to_string();
+    assert_eq!(render_filter(title, &placeholder.filters[0]), "Hello, ...".to_string());
+
+    // Providing just trail.
+    let input = Span::new("{{ £title | truncate = trail: -- }}");
+    let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
+    let title = "Hello, World! Hello, World! Hello, World! Hello, World!".to_string();
+    assert_eq!(render_filter(title, &placeholder.filters[0]), "Hello, World! Hello,--".to_string());
+
+    // Providing just trail on a short string (no trail added).
+    let input = Span::new("{{ £title | truncate = trail: -- }}");
+    let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
+    let title = "Hello, World!".to_string();
+    assert_eq!(render_filter(title, &placeholder.filters[0]), "Hello, World!".to_string());
+
+    // Providing just default argument.
+    let input = Span::new("{{ £title | truncate = 8 }}");
+    let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
+    let title = "Hello, World! Hello, World!".to_string();
+    assert_eq!(render_filter(title, &placeholder.filters[0]), "Hello, W...".to_string());
+
+    // Providing no arguments.
+    let input = Span::new("{{ £title | truncate }}");
+    let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
+    let title = "Hello, World! Hello, World! Hello, World! Hello, World!".to_string();
+    assert_eq!(render_filter(title, &placeholder.filters[0]), "Hello, World! Hello,...".to_string());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -566,8 +593,8 @@ fn can_replace_placeholder_from_meta() {
     // Unwrap, to peek the values, then re-wrap.
     let meta_values = meta_values.unwrap_or_default();
     assert_eq!(meta_values, vec![
-        Some(Meta::new("title", "Meta title")),
-        Some(Meta::new("author", "John Doe")),
+        Meta::new("title", "Meta title"),
+        Meta::new("author", "John Doe"),
     ]);
     let variables: HashMap<String, String> = create_variables(markdown, meta_values).expect("to create variables");
 

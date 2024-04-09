@@ -7,36 +7,117 @@ use nom_locate::LocatedSpan;
 // Structs and types
 pub type Span<'a> = LocatedSpan<&'a str>;
 
+/// Predefined functions names that will be used within `render_filter` to
+/// convert a value.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Filter {
+    /// Converts a string into lowercase.
+    ///
+    /// # Example
+    /// ```rust
+    /// "Hello, World!"
+    /// // becomes
+    /// "hello, world!"
+    /// ```
     Lowercase,
+    /// Converts a string into uppercase.
+    ///
+    /// # Example
+    /// ```rust
+    /// "Hello, World!"
+    /// // becomes
+    /// "HELLo, WORLD!"
+    /// ```
     Uppercase,
+    /// Converts a string from Markdown into HTML.
+    ///
+    /// # Examples
+    /// ```html
+    /// # Markdown Title
+    /// First paragraph.
+    ///
+    /// [example.com](https://example.com)
+    ///
+    /// * Unordered list
+    ///
+    /// 1. Ordered list
+    ///
+    /// <!-- becomes -->
+    ///
+    /// <h1>Markdown Title</h1>
+    /// <p>First paragraph.</p>
+    ///
+    /// <p><a href="https://example.com">example.com</a></p>
+    ///
+    /// <ul><li>Unordered list</li></ul>
+    ///
+    /// <ol><li>Unordered list</li></ol>
+    /// ```
     Markdown,
+    /// Reverse a string, character by character.
+    ///
+    /// # Example
+    /// ```rust
+    /// "Hello, World!"
+    /// // becomes
+    /// "!dlroW ,olleH"
+    /// ```
     Reverse,
+    /// Truncates a string to a given length, and applies a `trail`ing string,
+    /// if the string was truncated.
+    ///
+    /// # Example
+    /// ```rust
+    /// "Hello, World!"
+    /// // becomes this if characters is 5, and trail is "...".
+    /// "Hello..."
+    /// ```
     Truncate {
         characters: u8,
         trail: String,
     }
 }
 
+/// A simple struct to store the key value pair from within the meta section of
+/// a Markdown file.
+///
+/// # Example
+/// ```rust
+/// use blogs_md_easy::{parse_meta_line, Meta, Span};
+///
+/// let input = Span::new("foo = bar");
+/// let (_, meta) = parse_meta_line(input).unwrap();
+/// // Unwrap because key-values are Some() and comments are None.
+/// let meta = meta.unwrap();
+/// assert_eq!(meta, Meta::new("foo", "bar"));
+/// ```
 #[derive(Debug, PartialEq)]
 pub struct Meta {
     pub key: String,
     pub value: String,
-    pub filters: Vec<Filter>,
 }
 
 impl Meta {
+    /// Trims the `key` and `value` and stores them in the respective values in
+    /// this struct.
+    ///
+    /// # Example
+    /// ```rust
+    /// use blogs_md_easy::Meta;
+    ///
+    /// let meta_with_space = Meta::new("  foo  ", "  bar  ");
+    /// let meta_without_space = Meta::new("foo", "bar");
+    /// assert_eq!(meta_with_space, meta_without_space);
+    /// ```
     pub fn new(key: &str, value: &str) -> Self {
         Self {
             key: key.trim().to_string(),
             value: value.trim().to_string(),
-            filters: Vec::new(),
         }
     }
 }
 
-// A position for a Cursor.
+/// A position for a Cursor within a `Span`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Marker {
     pub line: u32,
@@ -44,6 +125,7 @@ pub struct Marker {
 }
 
 impl Marker {
+    /// Extracts the `location_line()` and `location_offset()` from the `Span`.
     pub fn new(span: Span) -> Self {
         Self {
             line: span.location_line(),
@@ -53,6 +135,16 @@ impl Marker {
 }
 
 impl Default for Marker {
+    /// Create a `Marker` with a `line` of `1` and `offset` of `1`.
+    ///
+    /// # Example
+    /// ```rust
+    /// use blogs_md_easy::Marker;
+    ///
+    /// let marker_default = Marker::default();
+    /// let marker_new = Marker { line: 1, offset: 1 };
+    /// assert_eq!(marker_default, marker_new);
+    /// ```
     fn default() -> Self {
         Self {
             line: 1,
@@ -61,6 +153,7 @@ impl Default for Marker {
     }
 }
 
+/// A helper struct that contains a start and end `Marker` of a `Span`.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Selection {
     pub start: Marker,
@@ -68,9 +161,18 @@ pub struct Selection {
 }
 
 impl Selection {
+    /// Generate a new selection from two `Spans`.
+    ///
+    /// The `start` argument will simply extract the `location_line` and
+    /// `location_offset` from the `Span`.
+    /// The `end` argument will use the `location_line`, but will set the offset
+    /// to the `location_offset` added to the `fragment` length to ensure we
+    /// consume the entire match.
     pub fn from(start: Span, end: Span) -> Self {
         Self {
             start: Marker::new(start),
+            // We cannot use `new` because we need to account for the string
+            // fragment length.
             end: Marker {
                 line: end.location_line(),
                 offset: end.location_offset() + end.fragment().len()
@@ -79,6 +181,17 @@ impl Selection {
     }
 }
 
+/// A Placeholder is a variable that is created within a Template file.
+///
+/// The syntax for a `Placeholder` is as below.
+/// ```
+/// {{ £variable_name[| filter_name[= [key: ]value]...] }}
+/// ```
+/// Breaking that down, it simply means that a Placeholder can just be a
+/// variable, or can have a list of optional filters following the `|`
+/// character.
+/// In the case of some filters, the key can be ignored as a default will be
+/// used; see the `Filter` enum for further documentation.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Placeholder {
     pub name: String,
@@ -252,7 +365,6 @@ pub fn parse_meta_line(input: Span) -> IResult<Span, Option<Meta>> {
 ///     Meta {
 ///         key: "publish_date".to_string(),
 ///         value: "2021-01-01".to_string(),
-///         filters: vec![],
 ///     },
 /// ]);
 /// assert_eq!(input.fragment(), &"# Markdown title");

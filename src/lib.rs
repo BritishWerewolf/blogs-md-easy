@@ -569,6 +569,7 @@ pub fn parse_filter(input: Span) -> IResult<Span, Filter> {
             "lowercase" => Filter::Lowercase,
             "uppercase" => Filter::Uppercase,
             "markdown" => Filter::Markdown,
+            "reverse" => Filter::Reverse,
             "truncate" => Filter::Truncate {
                 // Attempt to get the characters, but if we can't then we use
                 // the unnamed value, defined as "_".

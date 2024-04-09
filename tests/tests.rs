@@ -434,6 +434,33 @@ fn can_parse_two_filters() {
 }
 
 #[test]
+fn can_parse_all_filters() {
+    // We need this test that we don't forget to create match the string to the
+    // filter.
+    let filters: Vec<(Filter, Filter)> = vec![
+        (Filter::Lowercase, parse_filter(Span::new("lowercase")).expect("lowercase").1),
+        (Filter::Uppercase, parse_filter(Span::new("uppercase")).expect("uppercase").1),
+        (Filter::Markdown, parse_filter(Span::new("markdown")).expect("markdown").1),
+        (Filter::Reverse, parse_filter(Span::new("reverse")).expect("reverse").1),
+        (Filter::Truncate { characters: 20, trail: "...".to_string() }, parse_filter(Span::new("truncate")).expect("truncate").1),
+    ];
+
+    // Maybe a bit verbose, but this ensures that the compiler will catch new
+    // filters immediately.
+    for (expected_filter, actual_filter) in filters {
+        match actual_filter {
+            Filter::Lowercase => assert_eq!(expected_filter, Filter::Lowercase),
+            Filter::Uppercase => assert_eq!(expected_filter, Filter::Uppercase),
+            Filter::Markdown => assert_eq!(expected_filter, Filter::Markdown),
+            Filter::Reverse => assert_eq!(expected_filter, Filter::Reverse),
+            Filter::Truncate { characters, trail } => {
+                assert_eq!(expected_filter, Filter::Truncate { characters, trail });
+            }
+        }
+    }
+}
+
+#[test]
 fn filter_lowercase_works() {
     let input = "HELLO, WORLD!".to_string();
     let output = render_filter(input, &Filter::Lowercase);

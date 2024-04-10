@@ -33,6 +33,7 @@ Options:
   -t, --templates <FILES>...  HTML template that the Markdowns will populate
   -m, --markdowns <FILES>...  List of Markdown files ending in .md
   -o, --output-dir <DIR>      Output directory, defaults to the Markdown's directory
+  -a, --allow <RULES>...      Define an allow list for features
   -h, --help                  Print help
   -V, --version               Print version
 ```
@@ -260,6 +261,19 @@ This will not rename the file, but rather just place it in the specified directo
 
 Some formatting will be applied to the generated output, but it will likely need human intervention if you want the document to be formatted correct - such as indenting.  
 Currently, a new line is placed before all headings (from `h2` to to `h6`), but nothing else is changed.
+
+### Allow List
+In some cases, this program will report warnings.
+
+These do not prevent the program from running, but will simply print the warning to the console.  
+An example of this is unused variables.
+
+Consider if we had a Markdown file that declared a key-value, and then never referenced that variable in the template, then ordinarily the template would still be created but we'd have a statement in the console.
+```sh
+blogs-md-easy -m path/to/file.md -t path/to/template.html --allow unused
+```
+
+Providing `--allow unused` or `--alow unused_variables` will prevent this message from being shown.
 
 ## Todo List
 - [ ] Add if statements to render content based on a condition.

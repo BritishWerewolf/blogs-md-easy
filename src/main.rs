@@ -4,7 +4,19 @@ use clap::Parser;
 use std::{collections::HashMap, fs, path::PathBuf};
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stucts and types
+// Structs and types
+/// A list of the possible features that can be allowed.
+#[derive(Debug, PartialEq, Eq)]
+enum AllowList {
+    /// Allows anything that is unused to be acceptable.
+    Unused,
+    /// Allows any variable declared within the `meta` section.
+    ///
+    /// With this enabled, variables that are declared in the Markdown, but not
+    /// used within the Template, will not display a warning in the console.
+    UnusedVariables,
+}
+
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
@@ -22,12 +34,23 @@ struct Cli {
     /// Output directory, defaults to the Markdown's directory.
     #[arg(short, long, value_name = "DIR")]
     output_dir: Option<PathBuf>,
+
+    /// Define an allow list for features.
+    #[arg(short, long, value_name = "RULES", num_args = 1..)]
+    allow: Vec<String>,
 }
 
 fn main() -> Result<(), anyhow::Error> {
     let cli = Cli::parse();
 
     let templates = cli.templates;
+    let allow_list: Vec<AllowList> = cli.allow.into_iter().filter_map(|list| {
+        match list.trim().to_lowercase().as_str() {
+            "unused" => Some(AllowList::Unused),
+            "unused-variables" | "unused_variables" => Some(AllowList::UnusedVariables),
+            _ => None,
+        }
+    }).collect();
 
     // Get only existing markdowns.
     let markdown_urls: Vec<PathBuf> = cli.markdowns
@@ -62,15 +85,17 @@ fn main() -> Result<(), anyhow::Error> {
             let variables: HashMap<String, String> = create_variables(markdown, meta_values)?;
 
             // Check for unused variables.
-            let placeholder_keys = placeholders.iter().map(|p| &p.name).collect::<Vec<&String>>();
-            let unused_variables = variables.keys().filter(|key| !placeholder_keys.contains(key)).collect::<Vec<&String>>();
-            if !unused_variables.is_empty() {
-                println!(
-                    "Warning: Unused variable{} in '{}': {}",
-                    if unused_variables.len() == 1_usize { "" } else { "s" },
-                    &markdown_url.to_string_lossy(),
-                    unused_variables.iter().map(|v| v.to_string()).collect::<Vec<String>>().join(", ")
-                );
+            if !allow_list.contains(&AllowList::Unused) && !allow_list.contains(&AllowList::UnusedVariables) {
+                let placeholder_keys = placeholders.iter().map(|p| &p.name).collect::<Vec<&String>>();
+                let unused_variables = variables.keys().filter(|key| !placeholder_keys.contains(key)).collect::<Vec<&String>>();
+                if !unused_variables.is_empty() {
+                    println!(
+                        "Warning: Unused variable{} in '{}': {}",
+                        if unused_variables.len() == 1_usize { "" } else { "s" },
+                        &markdown_url.to_string_lossy(),
+                        unused_variables.iter().map(|v| v.to_string()).collect::<Vec<String>>().join(", ")
+                    );
+                }
             }
 
             for placeholder in &placeholders {

@@ -9,8 +9,8 @@ use std::{collections::HashMap, fs, path::PathBuf};
 #[command(version, about, long_about = None)]
 struct Cli {
     /// HTML template that the Markdowns will populate.
-    #[arg(short, long, required = true, value_name = "FILE")]
-    template: PathBuf,
+    #[arg(short, long, required = true, alias = "template", value_name = "FILES", num_args = 1..)]
+    templates: Vec<PathBuf>,
 
     // num_args is required so that we don't have to specify the option before
     // each file...
@@ -19,7 +19,7 @@ struct Cli {
     #[arg(short, long, required = true, value_name = "FILES", num_args = 1..)]
     markdowns: Vec<PathBuf>,
 
-    /// Output directory, defaults to the current directory.
+    /// Output directory, defaults to the Markdown's directory.
     #[arg(short, long, value_name = "DIR")]
     output_dir: Option<PathBuf>,
 }
@@ -27,14 +27,7 @@ struct Cli {
 fn main() -> Result<(), anyhow::Error> {
     let cli = Cli::parse();
 
-    let template = cli.template;
-
-    // Check that the actual template exists.
-    if !template.try_exists().map_err(|_| anyhow!("The template could not be found."))? {
-       Err(anyhow!("The template file does not exist."))?;
-    };
-    let template = std::fs::read_to_string(&template)?;
-    let template = Span::new(&template);
+    let templates = cli.templates;
 
     // Get only existing markdowns.
     let markdown_urls: Vec<PathBuf> = cli.markdowns
@@ -47,68 +40,87 @@ fn main() -> Result<(), anyhow::Error> {
         .collect();
     let markdowns: Vec<(String, PathBuf)> = markdowns.into_iter().zip(markdown_urls).collect();
 
-    // All placeholders that are present in the template.
-    let mut placeholders = parse_placeholder_locations(template)?;
-    placeholders.sort_by(|a, b| b.selection.start.offset.cmp(&a.selection.start.offset));
+    for template_path in &templates {
+        // Check that the actual template exists.
+        if !template_path.try_exists().map_err(|_| anyhow!("The template could not be found."))? {
+            Err(anyhow!("The template file does not exist."))?;
+        };
+        let template = std::fs::read_to_string(&template_path)?;
+        let template = Span::new(&template);
 
-    for (markdown, markdown_url) in &markdowns {
-        let markdown = Span::new(markdown);
-        let mut html_doc = template.fragment().to_string();
+        // All placeholders that are present in the template.
+        let mut placeholders = parse_placeholder_locations(template)?;
+        placeholders.sort_by(|a, b| b.selection.start.offset.cmp(&a.selection.start.offset));
 
-        // Parse the meta values, and combine them with the title and content of
-        // the markdown file.
-        let (markdown, meta_values) = parse_meta_section(markdown).unwrap_or((markdown, vec![]));
-        let variables: HashMap<String, String> = create_variables(markdown, meta_values)?;
+        for (markdown, markdown_url) in &markdowns {
+            let markdown = Span::new(markdown);
+            let mut html_doc = template.fragment().to_string();
 
-        // Check for unused variables.
-        let placeholder_keys = placeholders.iter().map(|p| &p.name).collect::<Vec<&String>>();
-        let unused_variables = variables.keys().filter(|key| !placeholder_keys.contains(key)).collect::<Vec<&String>>();
-        if !unused_variables.is_empty() {
-            println!(
-                "Warning: Unused variable{} in '{}': {}",
-                if unused_variables.len() == 1_usize { "" } else { "s" },
-                &markdown_url.to_string_lossy(),
-                unused_variables.iter().map(|v| v.to_string()).collect::<Vec<String>>().join(", ")
-            );
-        }
+            // Parse the meta values, and combine them with the title and content of
+            // the markdown file.
+            let (markdown, meta_values) = parse_meta_section(markdown).unwrap_or((markdown, vec![]));
+            let variables: HashMap<String, String> = create_variables(markdown, meta_values)?;
 
-        for placeholder in &placeholders {
-            if let Some(variable) = variables.get(&placeholder.name) {
-                // Used to deref the variable.
-                let mut variable = variable.to_owned();
+            // Check for unused variables.
+            let placeholder_keys = placeholders.iter().map(|p| &p.name).collect::<Vec<&String>>();
+            let unused_variables = variables.keys().filter(|key| !placeholder_keys.contains(key)).collect::<Vec<&String>>();
+            if !unused_variables.is_empty() {
+                println!(
+                    "Warning: Unused variable{} in '{}': {}",
+                    if unused_variables.len() == 1_usize { "" } else { "s" },
+                    &markdown_url.to_string_lossy(),
+                    unused_variables.iter().map(|v| v.to_string()).collect::<Vec<String>>().join(", ")
+                );
+            }
 
-                for filter in &placeholder.filters {
-                    variable = render_filter(variable, filter);
+            for placeholder in &placeholders {
+                if let Some(variable) = variables.get(&placeholder.name) {
+                    // Used to deref the variable.
+                    let mut variable = variable.to_owned();
+
+                    for filter in &placeholder.filters {
+                        variable = render_filter(variable, filter);
+                    }
+
+                    html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &variable);
+                } else {
+                    let url = markdown_url.to_str().unwrap_or_default();
+                    return Err(anyhow!("Missing variable '{}' in markdown '{}'.", &placeholder.name, url));
                 }
-
-                html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &variable);
-            } else {
-                let url = markdown_url.to_str().unwrap_or_default();
-                return Err(anyhow!("Missing variable '{}' in markdown '{}'.", &placeholder.name, url));
             }
-        }
 
-        // Add newlines before each heading element, because I'd like the HTML
-        // to be easy to read.
-        for h in 2..6 {
-            let h = format!("<h{h}>");
-            html_doc = html_doc.replace(&h, &format!("\n{h}"));
-        };
+            // Add newlines before each heading element, because I'd like the HTML
+            // to be easy to read.
+            for h in 2..6 {
+                let h = format!("<h{h}>");
+                html_doc = html_doc.replace(&h, &format!("\n{h}"));
+            };
 
-        // Get the output path where the `.md` is replaced with `.html`.
-        let output_path = match cli.output_dir.clone() {
-            Some(path) => path.join(markdown_url.with_extension("html").file_name().unwrap()),
-            None => markdown_url.with_extension("html"),
-        };
+            // Get the output path where the `.md` is replaced with `.html`.
+            let mut output_path = match cli.output_dir.clone() {
+                Some(path) => path.join(markdown_url.with_extension("html").file_name().unwrap()),
+                None => markdown_url.with_extension("html"),
+            };
 
-        // Create all folders from the path.
-        if let Some(path) = output_path.parent() {
-            if !path.exists() {
-                fs::create_dir_all(path)?;
+            // If there are multiple templates, then add that to the output path
+            // to avoid overwriting issues.
+            if templates.len() > 1 {
+                output_path = output_path.with_file_name(format!(
+                    "{}-{}",
+                    &template_path.file_stem().unwrap_or_default().to_str().unwrap_or_default(),
+                    output_path.file_stem().unwrap_or_default().to_str().unwrap_or_default()
+                )).with_extension("html");
             }
-        }
 
-        fs::write(output_path, html_doc)?;
+            // Create all folders from the path.
+            if let Some(path) = output_path.parent() {
+                if !path.exists() {
+                    fs::create_dir_all(path)?;
+                }
+            }
+
+            fs::write(output_path, html_doc)?;
+        }
     }
 
     Ok(())

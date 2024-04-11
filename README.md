@@ -23,22 +23,25 @@ $ cargo add blogs-md-easy
 ```
 
 ## Usage
-Below is the help page for the program binary, if you want to read the documentation for the libary, that is available on [docs.rs](https://docs.rs/blogs-md-easy).
+Below is the help page for the program binary, if you want to read the documentation for the library, that is available on [docs.rs](https://docs.rs/blogs-md-easy).
 ```
 Iteratively convert a collection of Markdown files into a respective HTML template.
 
-Usage: blogs-md-easy.exe [OPTIONS] --template <FILE> --markdowns <FILES>...
+Usage: blogs-md-easy.exe [OPTIONS] --templates <FILES>... --markdowns <FILES>...
 
 Options:
-  -t, --template <FILE>       HTML template that the Markdowns will populate
+  -t, --templates <FILES>...  HTML template that the Markdowns will populate
   -m, --markdowns <FILES>...  List of Markdown files ending in .md
   -o, --output-dir <DIR>      Output directory, defaults to the Markdown's directory
   -h, --help                  Print help
   -V, --version               Print version
 ```
 
-### Template
+### Templates
 Templates are `.html` files that use variables to populate the file.
+
+If more than a single template is provided, then the file stem will be used in the name of the output file. This is to avoid each template generating a new HTML file and overwriting previous files.  
+In the case that a single template is used, the output file name will simple be the Markdown file with the extension of `.html` instead of `.md`.
 
 Variables must follow these rules:
 * Must be wrapped in `{{` and `}}`, white space either side is optional.
@@ -238,7 +241,7 @@ Which would generate the following output
 
 #### Comments
 It's possible to add comments to the meta section, by starting a line with either `#` or `//`.  
-Comments will be parsed and the leading comment prefix will be removed, however this is superfluous as they will be replaced with None during parsing, and susequently removed.
+Comments will be parsed and the leading comment prefix will be removed, however this is superfluous as they will be replaced with None during parsing, and subsequently removed.
 ```md
 :meta
 // This is a comment.
@@ -268,10 +271,10 @@ Currently, a new line is placed before all headings (from `h2` to to `h6`), but 
     - For example if a key is passed without a value, then no meta values are parsed.
 - [ ] Ability to truncate to either characters or tags.
     - Useful for creating to short templates.
-- [ ] Generate for multiple templates at once.
+- [x] Generate for multiple templates at once.
 - [ ] Option to run against markdowns to determine if they were built off a different template.
 - [x] Add comments to the meta section.
-- [ ] Add mutliline values to the meta section.
+- [ ] Add multiline values to the meta section.
 - [x] Ensure meta tags must be the same.
     - If `:meta` is used to start the section, `:meta` should close it. Vice versa with `<meta>` and `</meta>`.
 - [ ] Formatting of the generated file.

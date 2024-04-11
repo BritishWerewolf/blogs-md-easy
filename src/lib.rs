@@ -5,6 +5,7 @@ use nom_locate::LocatedSpan;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Structs and types
+/// A `LocatedSpan` of a string slice, with lifetime `'a`.
 pub type Span<'a> = LocatedSpan<&'a str>;
 
 /// Predefined functions names that will be used within `render_filter` to
@@ -443,7 +444,8 @@ pub fn is_alphabetic(input: char) -> bool {
 }
 
 /// A function that checks if a character is valid for a filter name.
-/// The filter name is the value before the `=`.
+///
+/// The filter name is the value before the `=` in a Template.
 ///
 /// # Example
 /// ```rust
@@ -461,6 +463,8 @@ pub fn is_filter_name(input: char) -> bool {
 
 /// A function that checks if a character is valid for a filter argument name.
 ///
+/// This is the string preceding the `=` in the `meta` section.
+///
 /// # Example
 /// ```rust
 /// use blogs_md_easy::is_filter_arg;
@@ -475,7 +479,9 @@ pub fn is_filter_arg(input: char) -> bool {
     input.is_alphanumeric() || ['_'].contains(&input)
 }
 
-/// A function that checks if a character is valid for a filter argument name.
+/// A function that checks if a character is valid for a filter argument value.
+///
+/// This is the string following the `=` in the `meta` section.
 ///
 /// # Example
 /// ```rust
@@ -702,7 +708,7 @@ pub fn parse_filter(input: Span) -> IResult<Span, Filter> {
     })
 }
 
-/// Parsers a list of Filters.
+/// Parsers a pipe (`|`) separated list of `Filter`s.
 ///
 /// # Examples
 /// A single filter.

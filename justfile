@@ -18,11 +18,22 @@ build-dev:
 release tag:
     git switch --detach {{ tag }}
     just build
+    git switch -
+    just pull-main {{ tag }}
 
 # Publish a tag to Cargo.
 publish tag:
     git switch --detach {{ tag }}
     cargo publish
+    git switch -
+    just pull-main {{ tag }}
+
+# Bring main up to date
+[private]
+pull-main tag:
+    git switch main
+    git merge --ff-only {{ tag }}
+    git push
 
 ################################################################################
 # Tests

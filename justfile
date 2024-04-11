@@ -16,11 +16,13 @@ build-dev:
 # Releases
 # Build the binary for a given tag.
 release tag:
-    git stash --include-untracked
     git switch --detach {{ tag }}
     just build
-    git switch -
-    git stash pop
+
+# Publish a tag to Cargo.
+publish tag:
+    git switch --detach {{ tag }}
+    cargo publish
 
 ################################################################################
 # Tests

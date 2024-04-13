@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use blogs_md_easy::{create_variables, parse_meta_section, parse_placeholder_locations, render_filter, replace_substring, Span};
 use clap::Parser;
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{collections::HashMap, ffi::OsStr, fs, path::PathBuf};
 
 ////////////////////////////////////////////////////////////////////////////////
 // Structs and types
@@ -121,10 +121,14 @@ fn main() -> Result<(), anyhow::Error> {
                 html_doc = html_doc.replace(&h, &format!("\n{h}"));
             };
 
+            // Get the template extension, because the user might be passing in
+            // something like an SVG.
+            let template_ext = template_path.extension().unwrap_or(OsStr::new("html"));
+
             // Get the output path where the `.md` is replaced with `.html`.
             let mut output_path = match cli.output_dir.clone() {
-                Some(path) => path.join(markdown_url.with_extension("html").file_name().unwrap()),
-                None => markdown_url.with_extension("html"),
+                Some(path) => path.join(markdown_url.with_extension(template_ext).file_name().unwrap()),
+                None => markdown_url.with_extension(template_ext),
             };
 
             // If there are multiple templates, then add that to the output path

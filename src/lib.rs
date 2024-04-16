@@ -247,11 +247,15 @@ impl Selection {
 ///
 /// `{{ £variable_name[| filter_name[= [key: ]value]...] }}`
 ///
-/// Breaking that down, it simply means that a `Placeholder` can just be a
-/// variable, or can have a list of optional filters following the `|`
-/// character.
-/// In the case of some filters, the key can be ignored as a default will be
-/// used; see the [`Filter`] enum for further documentation.
+/// A compulsory `variable_name`, preceded by a `£`.  \
+/// Then an optional pipe (`|`) separated list of [`Filter`]s.  \
+/// Some filters are just a name, although some have additional arguments.
+///
+/// For more explanation on what a `Placeholder` looks like inside a template,
+/// see [`parse_placeholder`].
+///
+/// For more explanation on what a [`Filter`] looks like inside a `Placeholder`,
+/// see [`parse_filter`].
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Placeholder {
     pub name: String,
@@ -804,8 +808,9 @@ pub fn parse_filters(input: Span) -> IResult<Span, Vec<Filter>> {
     )(input)
 }
 
-/// Parse a template [`Placeholder`]. This is a variable name, surrounded by
-/// `{{` and `}}`.
+/// Parse a template [`Placeholder`].
+///
+/// This is a variable name, surrounded by `{{` and `}}`.  \
 /// Whitespace is optional.
 ///
 /// # Examples
@@ -829,6 +834,31 @@ pub fn parse_filters(input: Span) -> IResult<Span, Vec<Filter>> {
 /// assert_eq!(placeholder.name.as_str(), "variable");
 /// assert_eq!(placeholder.selection.start.offset, 0);
 /// assert_eq!(placeholder.selection.end.offset, 14);
+/// ```
+///
+/// A [`Placeholder`] with a single [`Filter`].
+/// ```rust
+/// use blogs_md_easy::{parse_placeholder, Filter, Span};
+///
+/// let input = Span::new("{{ £variable | uppercase }}");
+/// let (_, placeholder) = parse_placeholder(input).unwrap();
+/// assert_eq!(placeholder.name.as_str(), "variable");
+/// assert_eq!(placeholder.selection.start.offset, 0);
+/// assert_eq!(placeholder.selection.end.offset, 28);
+/// assert!(matches!(placeholder.filters[0], Filter::Uppercase));
+/// ```
+///
+/// A [`Placeholder`] with a two [`Filter`]s.
+/// ```rust
+/// use blogs_md_easy::{parse_placeholder, Filter, Span};
+///
+/// let input = Span::new("{{ £variable | lowercase | truncate = characters: 42 }}");
+/// let (_, placeholder) = parse_placeholder(input).unwrap();
+/// assert_eq!(placeholder.name.as_str(), "variable");
+/// assert_eq!(placeholder.selection.start.offset, 0);
+/// assert_eq!(placeholder.selection.end.offset, 56);
+/// assert!(matches!(placeholder.filters[0], Filter::Lowercase));
+/// assert_eq!(placeholder.filters[1], Filter::Truncate { characters: 42, trail: "...".to_string() });
 /// ```
 pub fn parse_placeholder(input: Span) -> IResult<Span, Placeholder> {
     tuple((
@@ -990,6 +1020,9 @@ pub fn create_variables(markdown: Span, meta_values: Vec<Meta>) -> Result<HashMa
 
 /// Take a variable, and run it through a [`Filter`] function to get the new
 /// output.
+///
+/// For an example of how these [`Filter`]s work within a [`Placeholder`], see
+/// [`parse_placeholder`].
 ///
 /// # Examples
 /// [`Filter`] that has no arguments.

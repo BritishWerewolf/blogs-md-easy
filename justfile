@@ -20,12 +20,14 @@ release tag:
     just build
     git switch -
     just pull-main {{ tag }}
+    git switch develop
 
 # Publish a tag to Cargo.
 publish tag:
     git switch --detach {{ tag }}
     cargo publish
     just pull-main {{ tag }}
+    git switch develop
 
 # Bring main up to date
 [private]

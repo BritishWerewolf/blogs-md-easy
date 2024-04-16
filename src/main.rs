@@ -40,17 +40,23 @@ struct Cli {
     allow: Vec<String>,
 }
 
-fn main() -> Result<(), anyhow::Error> {
-    let cli = Cli::parse();
-
-    let templates = cli.templates;
-    let allow_list: Vec<AllowList> = cli.allow.into_iter().filter_map(|list| {
+/// Converts a Vector of Strings, into a Vector of `AllowList`.  \
+/// If a match cannot be found, returns `None`.
+fn get_allow_list(allow_list: Vec<String>) -> Vec<AllowList>{
+    allow_list.into_iter().filter_map(|list| {
         match list.trim().to_lowercase().as_str() {
             "unused" => Some(AllowList::Unused),
             "unused-variables" | "unused_variables" => Some(AllowList::UnusedVariables),
             _ => None,
         }
-    }).collect();
+    }).collect()
+}
+
+fn main() -> Result<(), anyhow::Error> {
+    let cli = Cli::parse();
+
+    let templates = cli.templates;
+    let allow_list = get_allow_list(cli.allow);
 
     // Get only existing markdowns.
     let markdown_urls: Vec<PathBuf> = cli.markdowns

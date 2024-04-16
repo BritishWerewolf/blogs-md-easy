@@ -16,52 +16,67 @@ pub enum Filter {
     ///
     /// # Example
     /// ```rust
-    /// "Hello, World!"
-    /// // becomes
-    /// "hello, world!"
+    /// use blogs_md_easy::{render_filter, Filter};
+    ///
+    /// let input = "Hello, World!".to_string();
+    /// let filter = Filter::Lowercase;
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "hello, world!");
     /// ```
     Lowercase,
     /// Converts a string into uppercase.
     ///
     /// # Example
     /// ```rust
-    /// "Hello, World!"
-    /// // becomes
-    /// "HELLo, WORLD!"
+    /// use blogs_md_easy::{render_filter, Filter};
+    ///
+    /// let input = "Hello, World!".to_string();
+    /// let filter = Filter::Uppercase;
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "HELLO, WORLD!");
     /// ```
     Uppercase,
     /// Converts a string from Markdown into HTML.
     ///
-    /// # Examples
-    /// ```html
-    /// # Markdown Title
+    /// # Example
+    /// ```rust
+    /// use blogs_md_easy::{render_filter, Filter};
+    ///
+    /// let input = r#"# Markdown Title
     /// First paragraph.
     ///
     /// [example.com](https://example.com)
     ///
     /// * Unordered list
     ///
-    /// 1. Ordered list
+    /// 1. Ordered list"#.to_string();
+    /// let filter = Filter::Markdown;
+    /// let output = render_filter(input, &filter);
     ///
-    /// <!-- becomes -->
-    ///
-    /// <h1>Markdown Title</h1>
+    /// assert_eq!(output, r#"<h1>Markdown Title</h1>
     /// <p>First paragraph.</p>
-    ///
     /// <p><a href="https://example.com">example.com</a></p>
-    ///
-    /// <ul><li>Unordered list</li></ul>
-    ///
-    /// <ol><li>Unordered list</li></ol>
+    /// <ul>
+    /// <li>Unordered list</li>
+    /// </ul>
+    /// <ol>
+    /// <li>Ordered list</li>
+    /// </ol>"#);
     /// ```
     Markdown,
     /// Reverse a string, character by character.
     ///
     /// # Example
     /// ```rust
-    /// "Hello, World!"
-    /// // becomes
-    /// "!dlroW ,olleH"
+    /// use blogs_md_easy::{render_filter, Filter};
+    ///
+    /// let input = "Hello, World!".to_string();
+    /// let filter = Filter::Reverse;
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "!dlroW ,olleH");
     /// ```
     Reverse,
     /// Truncates a string to a given length, and applies a `trail`ing string,
@@ -69,12 +84,57 @@ pub enum Filter {
     ///
     /// # Example
     /// ```rust
-    /// "Hello, World!"
-    /// // becomes this if characters is 5, and trail is "...".
-    /// "Hello..."
+    /// use blogs_md_easy::{render_filter, Filter};
+    ///
+    /// let input = "Hello, World!".to_string();
+    /// let filter = Filter::Truncate { characters: 5, trail: "...".to_string() };
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "Hello...");
     /// ```
     Truncate {
+        /// The number of characters the String will be cut to.
+        ///
+        /// If this number is greater than the String's length, then nothing
+        /// happens to the String.
+        ///
+        /// `Default: 100`
+        ///
+        /// # Example
+        /// ```rust
+        /// use blogs_md_easy::{parse_filter, Filter, Span};
+        ///
+        /// let input = Span::new("truncate = trail: --");
+        /// let (_, filter) = parse_filter(input).unwrap();
+        ///
+        /// assert!(matches!(filter, Filter::Truncate { .. }));
+        /// assert_eq!(filter, Filter::Truncate {
+        ///     characters: 100,
+        ///     trail: "--".to_string(),
+        /// });
+        /// ```
         characters: u8,
+        /// The trailing characters to be appended to a truncated String.
+        ///
+        /// Due to this being appended, that means that your string will exceed
+        /// the characters length.  \
+        /// To counter this, you will need to reduce your `characters` value.
+        ///
+        /// `Default: "..."`
+        ///
+        /// # Example
+        /// ```rust
+        /// use blogs_md_easy::{parse_filter, Filter, Span};
+        ///
+        /// let input = Span::new("truncate = characters: 42");
+        /// let (_, filter) = parse_filter(input).unwrap();
+        ///
+        /// assert!(matches!(filter, Filter::Truncate { .. }));
+        /// assert_eq!(filter, Filter::Truncate {
+        ///     characters: 42,
+        ///     trail: "...".to_string(),
+        /// });
+        /// ```
         trail: String,
     }
 }
@@ -185,9 +245,9 @@ impl Selection {
 /// A Placeholder is a variable that is created within a Template file.
 ///
 /// The syntax for a `Placeholder` is as below.
-/// ```
-/// {{ £variable_name[| filter_name[= [key: ]value]...] }}
-/// ```
+///
+/// `{{ £variable_name[| filter_name[= [key: ]value]...] }}`
+///
 /// Breaking that down, it simply means that a Placeholder can just be a
 /// variable, or can have a list of optional filters following the `|`
 /// character.
@@ -677,7 +737,7 @@ pub fn parse_filter_args(input: Span) -> IResult<Span, Vec<(&str, &str)>> {
 /// let (_, filter) = parse_filter(input).unwrap();
 /// assert!(matches!(filter, Filter::Truncate { .. }));
 /// assert_eq!(filter, Filter::Truncate {
-///     characters: 20,
+///     characters: 100,
 ///     trail: "...".to_string(),
 /// });
 /// ```
@@ -699,8 +759,8 @@ pub fn parse_filter(input: Span) -> IResult<Span, Filter> {
                 // Attempt to get the characters, but if we can't then we use
                 // the unnamed value, defined as "_".
                 characters: args.get("characters").unwrap_or(
-                    args.get("_").unwrap_or(&"20")
-                ).parse::<u8>().unwrap_or(20),
+                    args.get("_").unwrap_or(&"100")
+                ).parse::<u8>().unwrap_or(100),
                 trail: args.get("trail").unwrap_or(&"...").to_string()
             },
             _ => unreachable!(),
@@ -731,7 +791,7 @@ pub fn parse_filter(input: Span) -> IResult<Span, Filter> {
 /// assert!(matches!(filters[0], Filter::Lowercase));
 /// assert!(matches!(filters[1], Filter::Truncate { .. }));
 /// assert_eq!(filters[1], Filter::Truncate {
-///     characters: 20,
+///     characters: 100,
 ///     trail: "..!".to_string(),
 /// });
 /// ```

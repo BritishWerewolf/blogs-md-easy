@@ -25,7 +25,6 @@ release tag:
 publish tag:
     git switch --detach {{ tag }}
     cargo publish
-    git switch -
     just pull-main {{ tag }}
 
 # Bring main up to date

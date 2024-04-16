@@ -370,7 +370,7 @@ fn can_parse_filter_with_defaults() {
     assert!(matches!(filter, Filter::Truncate { .. }));
 
     if let Filter::Truncate { characters, trail } = filter {
-        assert_eq!(characters, 20);
+        assert_eq!(characters, 100);
         assert_eq!(trail, "...");
     }
 }
@@ -398,7 +398,7 @@ fn can_parse_filter_with_args_not_provided() {
     assert!(matches!(filter, Filter::Truncate { .. }));
 
     if let Filter::Truncate { characters, trail } = filter {
-        assert_eq!(characters, 20);
+        assert_eq!(characters, 100);
         assert_eq!(trail, "...");
     }
 }
@@ -430,7 +430,7 @@ fn can_parse_all_filters() {
         (Filter::Uppercase, parse_filter(Span::new("uppercase")).expect("uppercase").1),
         (Filter::Markdown, parse_filter(Span::new("markdown")).expect("markdown").1),
         (Filter::Reverse, parse_filter(Span::new("reverse")).expect("reverse").1),
-        (Filter::Truncate { characters: 20, trail: "...".to_string() }, parse_filter(Span::new("truncate")).expect("truncate").1),
+        (Filter::Truncate { characters: 100, trail: "...".to_string() }, parse_filter(Span::new("truncate")).expect("truncate").1),
     ];
 
     // Maybe a bit verbose, but this ensures that the compiler will catch new
@@ -501,7 +501,7 @@ fn can_parse_truncate_filter() {
     let input = Span::new("| truncate = trail: --");
     let (_, filters) = parse_filters(input).expect("parse just trail");
     assert_eq!(filters.len(), 1);
-    assert_eq!(filters[0], Filter::Truncate { characters: 20, trail: "--".to_string() });
+    assert_eq!(filters[0], Filter::Truncate { characters: 100, trail: "--".to_string() });
 
     // Providing just default value.
     let input = Span::new("| truncate = 42");
@@ -513,7 +513,7 @@ fn can_parse_truncate_filter() {
     let input = Span::new("| truncate");
     let (_, filters) = parse_filters(input).expect("parse no arguments");
     assert_eq!(filters.len(), 1);
-    assert_eq!(filters[0], Filter::Truncate { characters: 20, trail: "...".to_string() });
+    assert_eq!(filters[0], Filter::Truncate { characters: 100, trail: "...".to_string() });
 }
 
 #[test]
@@ -533,8 +533,8 @@ fn can_render_truncate_filter() {
     // Providing just trail.
     let input = Span::new("{{ £title | truncate = trail: -- }}");
     let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
-    let title = "Hello, World! Hello, World! Hello, World! Hello, World!".to_string();
-    assert_eq!(render_filter(title, &placeholder.filters[0]), "Hello, World! Hello,--".to_string());
+    let title = "Hello, World! Hello, World! Hello, World! Hello, World! Hello, World! Hello, World! Hello, World! Hello, World!".to_string();
+    assert_eq!(render_filter(title, &placeholder.filters[0]), "Hello, World! Hello, World! Hello, World! Hello, World! Hello, World! Hello, World! Hello, World! He--".to_string());
 
     // Providing just trail on a short string (no trail added).
     let input = Span::new("{{ £title | truncate = trail: -- }}");
@@ -551,8 +551,8 @@ fn can_render_truncate_filter() {
     // Providing no arguments.
     let input = Span::new("{{ £title | truncate }}");
     let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
-    let title = "Hello, World! Hello, World! Hello, World! Hello, World!".to_string();
-    assert_eq!(render_filter(title, &placeholder.filters[0]), "Hello, World! Hello,...".to_string());
+    let title = "Hello, World! Hello, World! Hello, World! Hello, World! Hello, World! Hello, World! Hello, World! Hello, World!".to_string();
+    assert_eq!(render_filter(title, &placeholder.filters[0]), "Hello, World! Hello, World! Hello, World! Hello, World! Hello, World! Hello, World! Hello, World! He...".to_string());
 }
 
 ////////////////////////////////////////////////////////////////////////////////

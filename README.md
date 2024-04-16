@@ -254,7 +254,7 @@ description = This will appear in Search Engines.
 The above meta key-values that would be parsed would be `author` and `description`, with the values being `John Doe` and `This will appear in Search Engines.` respectively.
 
 ### Output
-All HTML files will be generated with the exact same name as the Markdown that they are converting, but with the `.html` extension.
+All HTML files will be generated with the exact same name as the Markdown that they are converting, but with the template's extension. 
 
 By default, the file will be created in the same directory as the Markdown file, however, by providing `--output-dir` (or `-o` if that's easier) the output directory can be changed.  
 This will not rename the file, but rather just place it in the specified directory.
@@ -268,29 +268,13 @@ In some cases, this program will report warnings.
 These do not prevent the program from running, but will simply print the warning to the console.  
 An example of this is unused variables.
 
-Consider if we had a Markdown file that declared a key-value, and then never referenced that variable in the template, then ordinarily the template would still be created but we'd have a statement in the console.
-```sh
-blogs-md-easy -m path/to/file.md -t path/to/template.html --allow unused
+Consider if we had a Markdown file that declared the key-value pair of `author = John Doe`, and then never referenced that variable in the template, then ordinarily the template would still be created but we'd have a warning in the console like this.
+```
+Warning: Unused variable in 'path/to/file.md': author
 ```
 
-Providing `--allow unused` or `--alow unused_variables` will prevent this message from being shown.
-
-## Todo List
-- [ ] Add if statements to render content based on a condition.
-- [x] Add filters to placeholders.
-    - [x] Add filters that support arguments.
-    - [ ] Add escape characters for argument values.
-- [ ] Add tag filter to prevent parsing scripts.
-- [ ] Add better handling for errors in meta sections.
-    - For example if a key is passed without a value, then no meta values are parsed.
-- [ ] Ability to truncate to either characters or tags.
-    - Useful for creating to short templates.
-- [x] Generate for multiple templates at once.
-- [ ] Option to run against markdowns to determine if they were built off a different template.
-- [x] Add comments to the meta section.
-- [ ] Add multiline values to the meta section.
-- [x] Ensure meta tags must be the same.
-    - If `:meta` is used to start the section, `:meta` should close it. Vice versa with `<meta>` and `</meta>`.
-- [ ] Formatting of the generated file.
-- [x] Document all functions.
-- [ ] Reduce complexity of `main` function, to make it easier to test.
+If you do not wish for this message to be printed, you can use the following commands.
+```sh
+blogs-md-easy -m path/to/file.md -t path/to/template.html --allow unused
+blogs-md-easy -m path/to/file.md -t path/to/template.html --allow unused_variables
+```

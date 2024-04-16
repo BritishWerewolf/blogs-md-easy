@@ -1,7 +1,6 @@
-use anyhow::anyhow;
 use blogs_md_easy::{create_variables, parse_meta_section, parse_placeholder_locations, render_filter, replace_substring, Span};
 use clap::Parser;
-use std::{collections::HashMap, ffi::OsStr, fs, path::PathBuf};
+use std::{collections::HashMap, error::Error, ffi::OsStr, fs, path::PathBuf};
 
 ////////////////////////////////////////////////////////////////////////////////
 // Structs and types
@@ -52,7 +51,7 @@ fn get_allow_list(allow_list: Vec<String>) -> Vec<AllowList>{
     }).collect()
 }
 
-fn main() -> Result<(), anyhow::Error> {
+fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
     let templates = cli.templates;
@@ -71,8 +70,8 @@ fn main() -> Result<(), anyhow::Error> {
 
     for template_path in &templates {
         // Check that the actual template exists.
-        if !template_path.try_exists().map_err(|_| anyhow!("The template could not be found."))? {
-            Err(anyhow!("The template file does not exist."))?;
+        if !template_path.try_exists().map_err(|_| "The template could not be found.".to_string())? {
+            Err("The template file does not exist.".to_string())?;
         };
         let template = std::fs::read_to_string(&template_path)?;
         let template = Span::new(&template);
@@ -116,7 +115,7 @@ fn main() -> Result<(), anyhow::Error> {
                     html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &variable);
                 } else {
                     let url = markdown_url.to_str().unwrap_or_default();
-                    return Err(anyhow!("Missing variable '{}' in markdown '{}'.", &placeholder.name, url));
+                    return Err(format!("Missing variable '{}' in markdown '{}'.", &placeholder.name, url))?;
                 }
             }
 

@@ -37,7 +37,7 @@ pull-main tag:
 ################################################################################
 # Tests
 # Run all tests.
-test-all:
+test:
     cargo test
 
 # Test all binaries.

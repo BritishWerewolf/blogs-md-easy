@@ -1,5 +1,4 @@
-use anyhow::anyhow;
-use std::collections::HashMap;
+use std::{collections::HashMap, error::Error};
 use nom::{branch::alt, bytes::complete::{tag, take_till, take_until, take_while, take_while_m_n}, character::complete::{alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till, separated_list1}, sequence::{delimited, preceded, separated_pair, terminated, tuple}, IResult, Parser};
 use nom_locate::LocatedSpan;
 
@@ -897,7 +896,7 @@ pub fn take_till_placeholder(input: Span) -> IResult<Span, Placeholder> {
 /// assert_eq!(placeholders[0].selection.start.offset, 7);
 /// assert_eq!(placeholders[0].selection.end.offset, 19);
 /// ```
-pub fn parse_placeholder_locations(input: Span) -> Result<Vec<Placeholder>, anyhow::Error> {
+pub fn parse_placeholder_locations(input: Span) -> Result<Vec<Placeholder>, Box<dyn Error>> {
     let (_, mut placeholders) = many0(take_till_placeholder)(input).unwrap_or((input, Vec::new()));
 
     // Sort in reverse so that when we replace each placeholder, the offsets do
@@ -964,7 +963,7 @@ pub fn replace_substring(original: &str, start: usize, end: usize, replacement: 
 /// assert_eq!(variables.get("author").unwrap(), "John Doe");
 /// assert_eq!(variables.get("content").unwrap(), "# Markdown title\nContent paragraph");
 /// ```
-pub fn create_variables(markdown: Span, meta_values: Vec<Meta>) -> Result<HashMap<String, String>, anyhow::Error> {
+pub fn create_variables(markdown: Span, meta_values: Vec<Meta>) -> Result<HashMap<String, String>, Box<dyn Error>> {
     let mut variables: HashMap<String, String> = meta_values
         .into_iter()
         .map(|meta| (meta.key.to_owned(), meta.value.to_owned()))
@@ -976,7 +975,7 @@ pub fn create_variables(markdown: Span, meta_values: Vec<Meta>) -> Result<HashMa
             let (_, title) = title;
             variables.insert("title".to_string(), title.to_string());
         } else {
-            return Err(anyhow!("Missing title"));
+            return Err("Missing title".to_string())?;
         }
     }
     if !variables.contains_key("content") {

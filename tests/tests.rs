@@ -186,6 +186,31 @@ fn can_parse_metadata_tag() {
 }
 
 #[test]
+fn can_parse_metadata_php() {
+    // Parses <?meta  ?>
+    let input = Span::new("<?meta\ntitle = Meta title\nauthor = John Doe\n?>\n# Markdown title\nThis is my content");
+    let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
+
+    assert_eq!(meta, vec![
+        Meta::new("title", "Meta title"),
+        Meta::new("author", "John Doe"),
+    ]);
+
+    assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
+
+    // Parses <?  ?>
+    let input = Span::new("<?\ntitle = Meta title\nauthor = John Doe\n?>\n# Markdown title\nThis is my content");
+    let (input, meta) = parse_meta_section(input).expect("to parse the meta values");
+
+    assert_eq!(meta, vec![
+        Meta::new("title", "Meta title"),
+        Meta::new("author", "John Doe"),
+    ]);
+
+    assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
+}
+
+#[test]
 fn can_parse_when_no_meta_section() {
     let input = Span::new("# Markdown title\nThis is my content");
     let (input, meta) = opt(parse_meta_section)(input).expect("to parse the meta values");

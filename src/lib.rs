@@ -4,10 +4,10 @@ use nom_locate::LocatedSpan;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Structs and types
-/// A `LocatedSpan` of a string slice, with lifetime `'a`.
+/// A [`LocatedSpan`] of a string slice, with lifetime `'a`.
 pub type Span<'a> = LocatedSpan<&'a str>;
 
-/// Predefined functions names that will be used within `render_filter` to
+/// Predefined functions names that will be used within [`render_filter`] to
 /// convert a value.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Filter {
@@ -177,7 +177,7 @@ impl Meta {
     }
 }
 
-/// A position for a Cursor within a `Span`.
+/// A position for a Cursor within a [`Span`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Marker {
     pub line: u32,
@@ -185,7 +185,7 @@ pub struct Marker {
 }
 
 impl Marker {
-    /// Extracts the `location_line()` and `location_offset()` from the `Span`.
+    /// Extracts the `location_line()` and `location_offset()` from the [`Span`].
     pub fn new(span: Span) -> Self {
         Self {
             line: span.location_line(),
@@ -213,7 +213,7 @@ impl Default for Marker {
     }
 }
 
-/// A helper struct that contains a start and end `Marker` of a `Span`.
+/// A helper struct that contains a start and end [`Marker`] of a [`Span`].
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Selection {
     pub start: Marker,
@@ -221,10 +221,10 @@ pub struct Selection {
 }
 
 impl Selection {
-    /// Generate a new selection from two `Spans`.
+    /// Generate a new selection from two [`Span`]s.
     ///
     /// The `start` argument will simply extract the `location_line` and
-    /// `location_offset` from the `Span`.
+    /// `location_offset` from the [`Span`].
     /// The `end` argument will use the `location_line`, but will set the offset
     /// to the `location_offset` added to the `fragment` length to ensure we
     /// consume the entire match.
@@ -241,17 +241,17 @@ impl Selection {
     }
 }
 
-/// A Placeholder is a variable that is created within a Template file.
+/// A `Placeholder` is a variable that is created within a Template file.
 ///
 /// The syntax for a `Placeholder` is as below.
 ///
 /// `{{ £variable_name[| filter_name[= [key: ]value]...] }}`
 ///
-/// Breaking that down, it simply means that a Placeholder can just be a
+/// Breaking that down, it simply means that a `Placeholder` can just be a
 /// variable, or can have a list of optional filters following the `|`
 /// character.
 /// In the case of some filters, the key can be ignored as a default will be
-/// used; see the `Filter` enum for further documentation.
+/// used; see the [`Filter`] enum for further documentation.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Placeholder {
     pub name: String,
@@ -277,7 +277,7 @@ pub struct Placeholder {
 /// assert_eq!(until_eol.fragment(), &"Hello, World!");
 /// ```
 ///
-/// There is a newline.
+/// When there is a newline.
 /// ```rust
 /// use blogs_md_easy::{parse_until_eol, Span};
 ///
@@ -410,8 +410,8 @@ pub fn parse_meta_line(input: Span) -> IResult<Span, Option<Meta>> {
     Ok((input, res))
 }
 
-/// Parse the meta section. This is either a `:meta` or `<meta>` tag surrounding
-/// a Vector of parse_meta_line.
+/// Parse the meta section. This is either a `:meta`, `<meta>`, or `<?meta` tag
+/// surrounding a Vector of [`parse_meta_line`].
 ///
 /// # Example
 /// ```rust
@@ -438,6 +438,11 @@ pub fn parse_meta_section(input: Span) -> IResult<Span, Vec<Meta>> {
             tuple((multispace0, tag(":meta"), multispace0)),
             many1(parse_meta_line),
             tuple((multispace0, tag(":meta"), multispace0)),
+        ),
+        delimited(
+            tuple((multispace0, tag("<?"), opt(tag("meta")), multispace0)),
+            many1(parse_meta_line),
+            tuple((multispace0, tag("?>"), multispace0)),
         ),
         delimited(
             tuple((multispace0, tag("<meta>"), multispace0)),
@@ -487,7 +492,7 @@ pub fn parse_title(input: Span) -> IResult<Span, Span> {
     Ok((input.to_owned(), title.to_owned()))
 }
 
-/// Rewrite of the nom::is_alphabetic function that takes a char instead.
+/// Rewrite of the `nom::is_alphabetic` function that takes a char instead.
 ///
 /// # Example
 /// ```rust
@@ -571,6 +576,7 @@ pub fn is_filter_value(input: char) -> bool {
 /// let (_, variable) = parse_variable_name(input).unwrap();
 /// assert_eq!(variable.fragment(), &"publish_date");
 /// ```
+///
 /// Variables cannot start with a number or underscore.
 /// ```rust
 /// use blogs_md_easy::{parse_variable_name, Span};
@@ -598,6 +604,7 @@ pub fn parse_variable_name(input: Span) -> IResult<Span, Span> {
 /// let (_, variable) = parse_variable(input).unwrap();
 /// assert_eq!(variable.fragment(), &"variable");
 /// ```
+///
 /// Failing to start with a `£` will return an error.
 /// ```rust
 /// use blogs_md_easy::{parse_variable, Span};
@@ -616,10 +623,6 @@ pub fn parse_variable(input: Span) -> IResult<Span, Span> {
 /// Parser that will parse exclusively the key-values from after a filter.  \
 /// This will return the key (before the `:`) and the value (after the `:`). It
 /// will also return a key of `_` if no key was provided.
-///
-/// # Returns
-/// A tuple of the filter name and a vector of key-value pairs.  \
-/// If only a value was provided, then the key will be `_`.
 ///
 /// # Examples
 /// Ensure that a key-value pair, separated by a colon, can be parsed into a
@@ -691,7 +694,7 @@ pub fn parse_filter_args(input: Span) -> IResult<Span, Vec<(&str, &str)>> {
     )(input)
 }
 
-/// Parse a filter, and optionally its arguments if present.
+/// Parse a [`Filter`], and optionally its arguments if present.
 ///
 /// # Examples
 /// A filter with no arguments.
@@ -706,7 +709,7 @@ pub fn parse_filter_args(input: Span) -> IResult<Span, Vec<(&str, &str)>> {
 /// A filter with just a value, but no key.  \
 /// This will be parsed as a key of `_`, which will then be set to a key of the
 /// given enum Struct variant that is deemed the default.  \
-/// In the case of `Filter::Truncate`, this will be the `characters`.
+/// In the case of [`Filter::Truncate`], this will be the `characters`.
 /// ```rust
 /// use blogs_md_easy::{parse_filter, Filter, Span};
 ///
@@ -767,7 +770,7 @@ pub fn parse_filter(input: Span) -> IResult<Span, Filter> {
     })
 }
 
-/// Parsers a pipe (`|`) separated list of `Filter`s.
+/// Parsers a pipe (`|`) separated list of [`Filter`]s.
 ///
 /// # Examples
 /// A single filter.
@@ -801,12 +804,12 @@ pub fn parse_filters(input: Span) -> IResult<Span, Vec<Filter>> {
     )(input)
 }
 
-/// Parse a template placeholder. This is a variable name, surrounded by `{{`
-/// and `}}`.
+/// Parse a template [`Placeholder`]. This is a variable name, surrounded by
+/// `{{` and `}}`.
 /// Whitespace is optional.
 ///
 /// # Examples
-/// A simple placeholder.
+/// A simple [`Placeholder`].
 /// ```rust
 /// use blogs_md_easy::{parse_placeholder, Span};
 ///
@@ -817,7 +820,7 @@ pub fn parse_filters(input: Span) -> IResult<Span, Vec<Filter>> {
 /// assert_eq!(placeholder.selection.end.offset, 16);
 /// ```
 ///
-/// A placeholder without whitespace.
+/// A [`Placeholder`] without whitespace.
 /// ```rust
 /// use blogs_md_easy::{parse_placeholder, Span};
 ///
@@ -851,7 +854,7 @@ pub fn parse_placeholder(input: Span) -> IResult<Span, Placeholder> {
 }
 
 /// Parse a string consuming - and discarding - any character, and stopping at
-/// the first matched placeholder, returning a Placeholder struct.
+/// the first matched placeholder, returning a [`Placeholder`] struct.
 ///
 /// # Example
 /// ```rust
@@ -883,7 +886,7 @@ pub fn take_till_placeholder(input: Span) -> IResult<Span, Placeholder> {
 
 /// Consume an entire string, and return a Vector of a tuple; where the first
 /// element is a String of the variable name, and the second element is the
-/// Placeholder.
+/// [`Placeholder`].
 ///
 /// # Example
 /// ```rust
@@ -923,7 +926,6 @@ pub fn parse_placeholder_locations(input: Span) -> Result<Vec<Placeholder>, Box<
 /// * A new string with the replacement in place of the original substring.
 ///
 /// # Example
-///
 /// ```
 /// use blogs_md_easy::replace_substring;
 ///
@@ -949,7 +951,7 @@ pub fn replace_substring(original: &str, start: usize, end: usize, replacement: 
 /// * `meta_values` - An optional vector of Meta values.
 ///
 /// # Returns
-/// Convert the meta_values into a HashMap, then parse the title and content
+/// Convert the meta_values into a [`HashMap`], then parse the title and content
 /// from the markdown file.
 ///
 /// # Example
@@ -986,11 +988,11 @@ pub fn create_variables(markdown: Span, meta_values: Vec<Meta>) -> Result<HashMa
     Ok(variables)
 }
 
-/// Take a variable, and run it through a Filter function to get the new
+/// Take a variable, and run it through a [`Filter`] function to get the new
 /// output.
 ///
 /// # Examples
-/// Filter that has no arguments.
+/// [`Filter`] that has no arguments.
 /// ```rust
 /// use blogs_md_easy::{render_filter, Filter};
 ///
@@ -998,7 +1000,7 @@ pub fn create_variables(markdown: Span, meta_values: Vec<Meta>) -> Result<HashMa
 /// assert_eq!("HELLO, WORLD!", render_filter(variable, &Filter::Uppercase));
 /// ```
 ///
-/// Filter that has arguments.
+/// [`Filter`] that has arguments.
 /// ```rust
 /// use blogs_md_easy::{render_filter, Filter};
 ///

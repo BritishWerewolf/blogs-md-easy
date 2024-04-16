@@ -1,4 +1,4 @@
-use blogs_md_easy::{create_variables, parse_meta_section, parse_placeholder_locations, render_filter, replace_substring, Span};
+use blogs_md_easy::{create_variables, parse_meta_section, parse_placeholder_locations, render_filter, replace_substring, Placeholder, Span};
 use clap::Parser;
 use std::{collections::HashMap, error::Error, ffi::OsStr, fs, path::PathBuf};
 
@@ -51,6 +51,25 @@ fn get_allow_list(allow_list: Vec<String>) -> Vec<AllowList>{
     }).collect()
 }
 
+/// Take a Vector of paths, make sure they're Markdown files, then read the
+/// contents.
+fn get_markdowns(paths: Vec<PathBuf>) -> Vec<(PathBuf, String)> {
+    paths
+    .into_iter()
+    // Ensure the file exists and is a `.md` file.
+    .filter(|file| file.exists() && file.extension().unwrap_or_default() == "md")
+    // Now read the contents into a String and convert to tuple.
+    .filter_map(|path| fs::read_to_string(&path).ok().map(|content| (path, content)))
+    .collect()
+}
+
+/// Locate all `Placeholder`s from the template.
+fn get_placeholders(template: Span) -> Result<Vec<Placeholder>, Box<dyn Error>> {
+    let mut placeholders = parse_placeholder_locations(template)?;
+    placeholders.sort_by(|a, b| b.selection.start.offset.cmp(&a.selection.start.offset));
+    Ok(placeholders)
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
@@ -58,15 +77,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let allow_list = get_allow_list(cli.allow);
 
     // Get only existing markdowns.
-    let markdown_urls: Vec<PathBuf> = cli.markdowns
-        .into_iter()
-        .filter(|file| file.exists() && file.extension().unwrap_or_default() == "md")
-        .collect();
-    let markdowns: Vec<String> = markdown_urls
-        .iter()
-        .filter_map(|path| fs::read_to_string(path).ok())
-        .collect();
-    let markdowns: Vec<(String, PathBuf)> = markdowns.into_iter().zip(markdown_urls).collect();
+    let markdowns = get_markdowns(cli.markdowns);
 
     for template_path in &templates {
         // Check that the actual template exists.
@@ -77,10 +88,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         let template = Span::new(&template);
 
         // All placeholders that are present in the template.
-        let mut placeholders = parse_placeholder_locations(template)?;
-        placeholders.sort_by(|a, b| b.selection.start.offset.cmp(&a.selection.start.offset));
+        let placeholders = get_placeholders(template)?;
 
-        for (markdown, markdown_url) in &markdowns {
+        for (markdown_url, markdown) in &markdowns {
             let markdown = Span::new(markdown);
             let mut html_doc = template.fragment().to_string();
 
@@ -158,4 +168,56 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn can_convert_html() {
+        let template = PathBuf::from("tests/template.html");
+        let template = fs::read_to_string(template).expect("template to exist");
+        let template = Span::new(&template);
+
+        let markdown = PathBuf::from("tests/one.md");
+        let output = &markdown.with_file_name("one_output").with_extension("html");
+        let markdowns = get_markdowns(vec![markdown]);
+
+        let placeholders = get_placeholders(Span::new(&template)).expect("to parse placeholders");
+
+        for (_markdown_url, markdown) in &markdowns {
+            let markdown = Span::new(markdown);
+            let mut html_doc = template.fragment().to_string();
+
+            let (markdown, meta_values) = parse_meta_section(markdown).unwrap_or((markdown, vec![]));
+            let variables: HashMap<String, String> = create_variables(markdown, meta_values).expect("to create variables");
+
+            for placeholder in &placeholders {
+                let mut variable = variables.get(&placeholder.name).expect("placeholder to be present in template.").to_owned();
+
+                for filter in &placeholder.filters {
+                    variable = render_filter(variable, filter);
+                }
+
+                html_doc = replace_substring(&html_doc, placeholder.selection.start.offset, placeholder.selection.end.offset, &variable);
+            }
+
+            fs::write(output, html_doc).expect("to write html");
+        }
+
+        let output = fs::read_to_string(PathBuf::from(output)).expect("to read output");
+        let output = output.replace("\r", "");
+        assert_eq!(output, r#"<head>
+    <title>MARKDOWN TITLE</title>
+</head>
+<body>
+    <p>By John Doe</p>
+    <main><h1>Markdown Title</h1>
+<p>This is the first paragraph of this file.</p>
+<p>Now we have a new paragraph.<br />
+And this is a newline.</p></main>
+</body>
+"#);
+    }
 }

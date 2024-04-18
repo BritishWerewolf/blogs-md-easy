@@ -451,6 +451,9 @@ fn can_parse_all_filters() {
     // We need this test that we don't forget to create match the string to the
     // filter.
     let filters: Vec<(Filter, Filter)> = vec![
+        (Filter::Ceil, parse_filter(Span::new("ceil")).expect("ceil").1),
+        (Filter::Floor, parse_filter(Span::new("floor")).expect("floor").1),
+
         // Lower case and uppercase have aliased filters...
         (Filter::Text { case: TextCase::Lower }, parse_filter(Span::new("lowercase")).expect("lower").1),
         (Filter::Text { case: TextCase::Upper }, parse_filter(Span::new("UPPERCASE")).expect("upper").1),
@@ -470,6 +473,11 @@ fn can_parse_all_filters() {
     // filters immediately.
     for (expected_filter, actual_filter) in filters {
         match actual_filter {
+            // Maths filters.
+            Filter::Ceil => assert_eq!(expected_filter, Filter::Ceil),
+            Filter::Floor => assert_eq!(expected_filter, Filter::Floor),
+
+            // String filters.
             Filter::Text { case: TextCase::Lower } => assert_eq!(expected_filter, Filter::Text { case: TextCase::Lower }),
             Filter::Text { case: TextCase::Upper } => assert_eq!(expected_filter, Filter::Text { case: TextCase::Upper }),
             Filter::Text { case: TextCase::Title } => assert_eq!(expected_filter, Filter::Text { case: TextCase::Title }),
@@ -485,6 +493,28 @@ fn can_parse_all_filters() {
             }
         }
     }
+}
+
+#[test]
+fn filter_ceil_works() {
+    let input = "-1.234".to_string();
+    let output = render_filter(input, &Filter::Ceil);
+    assert_eq!(output, "-1");
+
+    let input = "1.234".to_string();
+    let output = render_filter(input, &Filter::Ceil);
+    assert_eq!(output, "2");
+}
+
+#[test]
+fn filter_floor_works() {
+    let input = "-1.234".to_string();
+    let output = render_filter(input, &Filter::Floor);
+    assert_eq!(output, "-2");
+
+    let input = "1.234".to_string();
+    let output = render_filter(input, &Filter::Floor);
+    assert_eq!(output, "1");
 }
 
 #[test]

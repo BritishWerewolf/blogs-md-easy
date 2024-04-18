@@ -209,7 +209,7 @@ mod tests {
         let output = fs::read_to_string(PathBuf::from(output)).expect("to read output");
         let output = output.replace("\r", "");
         assert_eq!(output, r#"<head>
-    <title>MARKDOWN TITLE</title>
+    <title>MARKDOWN TITLE | 2 | 1</title>
 </head>
 <body>
     <p>blogs_md_easy by British Werewolf</p>

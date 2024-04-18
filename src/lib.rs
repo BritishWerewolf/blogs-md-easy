@@ -166,6 +166,37 @@ impl FromStr for TextCase {
 /// convert a value.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Filter {
+    // Maths filters
+
+    /// Rounds a numeric value up to the nearest whole number.
+    ///
+    /// # Example
+    /// ```rust
+    /// use blogs_md_easy::{render_filter, Filter};
+    ///
+    /// let input = "1.234".to_string();
+    /// let filter = Filter::Ceil;
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "2");
+    /// ```
+    Ceil,
+    /// Rounds a numeric value down to the nearest whole number.
+    ///
+    /// # Example
+    /// ```rust
+    /// use blogs_md_easy::{render_filter, Filter};
+    ///
+    /// let input = "4.567".to_string();
+    /// let filter = Filter::Floor;
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "4");
+    /// ```
+    Floor,
+
+    // String filter
+
     /// Converts a string from Markdown into HTML.
     ///
     /// # Example
@@ -944,6 +975,11 @@ pub fn parse_filter(input: Span) -> IResult<Span, Filter> {
         let args: HashMap<&str, &str> = args.unwrap_or_default().into_iter().collect();
 
         (input, match name.fragment().to_lowercase().trim() {
+            // Maths filters.
+            "ceil" => Filter::Ceil,
+            "floor" => Filter::Floor,
+
+            // String filters.
             "lowercase" => Filter::Text { case: TextCase::Lower },
             "uppercase" => Filter::Text { case: TextCase::Upper },
             "markdown" => Filter::Markdown,
@@ -1298,6 +1334,11 @@ pub fn split_string(phrase: String, separators: &[char]) -> Vec<String> {
 /// ```
 pub fn render_filter(variable: String, filter: &Filter) -> String {
     match filter {
+        // Maths filters.
+        Filter::Ceil => variable.parse::<f64>().unwrap_or_default().ceil().to_string(),
+        Filter::Floor => variable.parse::<f64>().unwrap_or_default().floor().to_string(),
+
+        // String filters.
         Filter::Markdown  => {
             markdown::to_html_with_options(&variable, &markdown::Options {
                 compile: markdown::CompileOptions {

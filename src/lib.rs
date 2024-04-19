@@ -292,6 +292,117 @@ pub enum Filter {
     /// </ol>"#);
     /// ```
     Markdown,
+    /// Replace a given substring with another. Optionally, limit the number of
+    /// replacements from the start of the string.
+    ///
+    /// `Default argument: find`
+    ///
+    /// # Example
+    /// ```rust
+    /// use blogs_md_easy::{render_filter, Filter};
+    ///
+    /// let input = "Hello, World!".to_string();
+    /// let filter = Filter::Replace {
+    ///     find: "World".to_string(),
+    ///     replacement: "Rust".to_string(),
+    ///     limit: None,
+    /// };
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "Hello, Rust!");
+    /// ```
+    Replace {
+        /// The substring that we are looking for.
+        find: String,
+        /// The substring that will replace what we `find`.
+        replacement: String,
+        /// Limit the number of replacements from the start of the string.
+        ///
+        /// `Default: None`
+        ///
+        /// # Examples
+        /// Without an argument, this will default to doing nothing.
+        /// ```rust
+        /// use blogs_md_easy::{parse_placeholder, render_filter, Filter, Span};
+        ///
+        /// let input = Span::new("{{ £greeting | replace }}");
+        /// let (_, placeholder) = parse_placeholder(input).unwrap();
+        ///
+        /// assert!(matches!(placeholder.filters[0], Filter::Replace { .. }));
+        /// assert_eq!(placeholder.filters[0], Filter::Replace {
+        ///     find: "".to_string(),
+        ///     replacement: "".to_string(),
+        ///     limit: None,
+        /// });
+        ///
+        /// let greeting = "Hello, World!".to_string();
+        /// // Cloning here, only so we can reuse the `greeting` variable in
+        /// // assert, to prove that they are identical.
+        /// let output = render_filter(greeting.clone(), &placeholder.filters[0]);
+        /// assert_eq!(output, greeting);
+        /// ```
+        ///
+        /// Providing the default argument.
+        /// In this case the value will be assigned to `find`, and the
+        /// `replacement` will be an empty String, essentially removing this
+        /// phrase from the string.
+        /// ```rust
+        /// use blogs_md_easy::{parse_placeholder, render_filter, Filter, Span};
+        ///
+        /// let input = Span::new("{{ £greeting | replace = World }}");
+        /// let (_, placeholder) = parse_placeholder(input).unwrap();
+        ///
+        /// assert!(matches!(placeholder.filters[0], Filter::Replace { .. }));
+        /// assert_eq!(placeholder.filters[0], Filter::Replace {
+        ///     find: "World".to_string(),
+        ///     replacement: "".to_string(),
+        ///     limit: None,
+        /// });
+        ///
+        /// let greeting = "Hello, World!".to_string();
+        /// let output = render_filter(greeting, &placeholder.filters[0]);
+        /// assert_eq!(output, "Hello, !".to_string());
+        /// ```
+        ///
+        /// Specify the number of replacements.
+        /// ```rust
+        /// use blogs_md_easy::{parse_placeholder, render_filter, Filter, Span};
+        ///
+        /// let input = Span::new("{{ £greeting | replace = !, limit: 2 }}");
+        /// let (_, placeholder) = parse_placeholder(input).unwrap();
+        ///
+        /// assert!(matches!(placeholder.filters[0], Filter::Replace { .. }));
+        /// assert_eq!(placeholder.filters[0], Filter::Replace {
+        ///     find: "!".to_string(),
+        ///     replacement: "".to_string(),
+        ///     limit: Some(2),
+        /// });
+        ///
+        /// let greeting = "Hello, World!!!".to_string();
+        /// let output = render_filter(greeting, &placeholder.filters[0]);
+        /// assert_eq!(output, "Hello, World!".to_string());
+        /// ```
+        ///
+        /// Setting all arguments explicitly.
+        /// ```rust
+        /// use blogs_md_easy::{parse_placeholder, render_filter, Filter, Span};
+        ///
+        /// let input = Span::new("{{ £greeting | replace = find: World, replacement: Rust, limit: 1 }}");
+        /// let (_, placeholder) = parse_placeholder(input).unwrap();
+        ///
+        /// assert!(matches!(placeholder.filters[0], Filter::Replace { .. }));
+        /// assert_eq!(placeholder.filters[0], Filter::Replace {
+        ///     find: "World".to_string(),
+        ///     replacement: "Rust".to_string(),
+        ///     limit: Some(1),
+        /// });
+        ///
+        /// let greeting = "Hello, World! Hello, World!".to_string();
+        /// let output = render_filter(greeting, &placeholder.filters[0]);
+        /// assert_eq!(output, "Hello, Rust! Hello, World!".to_string());
+        /// ```
+        limit: Option<u8>,
+    },
     /// Reverse a string, character by character.
     ///
     /// # Example
@@ -1055,6 +1166,13 @@ pub fn parse_filter(input: Span) -> IResult<Span, Filter> {
             "lowercase" => Filter::Text { case: TextCase::Lower },
             "uppercase" => Filter::Text { case: TextCase::Upper },
             "markdown" => Filter::Markdown,
+            "replace" => Filter::Replace {
+                find: args.get("find").unwrap_or(
+                    args.get("_").unwrap_or(&"")
+                ).to_string(),
+                replacement: args.get("replacement").unwrap_or(&"").to_string(),
+                limit: args.get("limit").map(|s| s.parse::<u8>().ok()).unwrap_or(None),
+            },
             "reverse" => Filter::Reverse,
             "truncate" => Filter::Truncate {
                 // Attempt to get the characters, but if we can't then we use
@@ -1432,6 +1550,28 @@ pub fn render_filter(variable: String, filter: &Filter) -> String {
                 },
                 ..Default::default()
             }).unwrap_or_default()
+        },
+        Filter::Replace { find, replacement, limit } => {
+            if limit.is_none() {
+                variable.replace(find, replacement)
+            } else {
+                // Subtract 1 to account for the final iteration.
+                let segments = variable.split(find).count() - 1;
+
+                variable
+                .split(find)
+                .enumerate()
+                .map(|(count, part)| {
+                    // We can safely unwrap, because `limit.is_some()`.
+                    if (count as u8) < limit.unwrap() {
+                        format!("{}{}", part, replacement)
+                    } else {
+                        format!("{}{}", part, if count < segments { find } else { "" })
+                    }
+                })
+                .collect::<Vec<String>>()
+                .join("")
+            }
         },
         Filter::Reverse => variable.chars().rev().collect(),
         Filter::Truncate { characters, trail } => {

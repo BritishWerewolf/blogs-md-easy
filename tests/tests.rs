@@ -466,6 +466,7 @@ fn can_parse_all_filters() {
         (Filter::Text { case: TextCase::Camel }, parse_filter(Span::new("text = camelCase")).expect("camel").1),
         (Filter::Text { case: TextCase::Invert }, parse_filter(Span::new("text = invert")).expect("invert").1),
         (Filter::Markdown, parse_filter(Span::new("markdown")).expect("markdown").1),
+        (Filter::Replace { find: "".to_string(), replacement: "".to_string(), limit: None }, parse_filter(Span::new("replace")).expect("replace").1),
         (Filter::Reverse, parse_filter(Span::new("reverse")).expect("reverse").1),
         (Filter::Truncate { characters: 100, trail: "...".to_string() }, parse_filter(Span::new("truncate")).expect("truncate").1),
     ];
@@ -489,10 +490,9 @@ fn can_parse_all_filters() {
             Filter::Text { case: TextCase::Camel } => assert_eq!(expected_filter, Filter::Text { case: TextCase::Camel }),
             Filter::Text { case: TextCase::Invert } => assert_eq!(expected_filter, Filter::Text { case: TextCase::Invert }),
             Filter::Markdown => assert_eq!(expected_filter, Filter::Markdown),
+            Filter::Replace { find, replacement, limit } => assert_eq!(expected_filter, Filter::Replace { find, replacement, limit }),
             Filter::Reverse => assert_eq!(expected_filter, Filter::Reverse),
-            Filter::Truncate { characters, trail } => {
-                assert_eq!(expected_filter, Filter::Truncate { characters, trail });
-            }
+            Filter::Truncate { characters, trail } => assert_eq!(expected_filter, Filter::Truncate { characters, trail })
         }
     }
 }
@@ -599,6 +599,78 @@ fn filter_markdown_works() {
     let input = "# Title\nFirst _paragraph_.  \nNewline.\n\nSecond paragraph with [link](https://example.com).\n\n* Unordered list.\n\n1. Ordered list.".to_string();
     let output = render_filter(input, &Filter::Markdown);
     assert_eq!(output, "<h1>Title</h1>\n<p>First <em>paragraph</em>.<br />\nNewline.</p>\n<p>Second paragraph with <a href=\"https://example.com\">link</a>.</p>\n<ul>\n<li>Unordered list.</li>\n</ul>\n<ol>\n<li>Ordered list.</li>\n</ol>");
+}
+
+#[test]
+fn filter_replace_works() {
+    let input = "Hello, World! Hello, World!".to_string();
+    let output = render_filter(input, &Filter::Replace { find: "World".to_string(), replacement: "Rust".to_string(), limit: None });
+    assert_eq!(output, "Hello, Rust! Hello, Rust!");
+
+    let input = "Hello, World! Hello, World!".to_string();
+    let output = render_filter(input, &Filter::Replace { find: "World".to_string(), replacement: "Rust".to_string(), limit: Some(1) });
+    assert_eq!(output, "Hello, Rust! Hello, World!");
+
+    // Replacing is a walk in the park!
+    let input = "pawalkrk".to_string();
+    let output = render_filter(input, &Filter::Replace { find: "walk".to_string(), replacement: "".to_string(), limit: None });
+    assert_eq!(output, "park");
+}
+
+#[test]
+fn can_parse_replace_filter() {
+    // Providing all arguments.
+    let input = Span::new("| replace = find: World, replacement: Rust, limit: 1");
+    let (_, filters) = parse_filters(input).expect("parse replace");
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0], Filter::Replace { find: "World".to_string(), replacement: "Rust".to_string(), limit: Some(1) });
+
+    // Using the default argument.
+    let input = Span::new("| replace = World, replacement: Rust, limit: 1");
+    let (_, filters) = parse_filters(input).expect("parse replace");
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0], Filter::Replace { find: "World".to_string(), replacement: "Rust".to_string(), limit: Some(1) });
+
+    // Removing a word by not providing a replacement.
+    let input = Span::new("| replace = World, limit: 1");
+    let (_, filters) = parse_filters(input).expect("parse replace");
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0], Filter::Replace { find: "World".to_string(), replacement: "".to_string(), limit: Some(1) });
+
+    // Removing all words by not providing a replacement and limit.
+    // It is also possible to include `replacement` here to replace them all.
+    let input = Span::new("| replace = World");
+    let (_, filters) = parse_filters(input).expect("parse replace");
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0], Filter::Replace { find: "World".to_string(), replacement: "".to_string(), limit: None });
+}
+
+#[test]
+fn can_render_replace_filter() {
+    // Providing all arguments.
+    let input = Span::new("{{ £greeting | replace = find: World, replacement: Rust, limit: 1 }}");
+    let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
+    let title = "Hello, World! Hello, World!".to_string();
+    assert_eq!(render_filter(title, &placeholder.filters[0]), "Hello, Rust! Hello, World!".to_string());
+
+    // Using the default argument.
+    let input = Span::new("{{ £greeting | replace = World, replacement: Rust, limit: 1 }}");
+    let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
+    let title = "Hello, World! Hello, World!".to_string();
+    assert_eq!(render_filter(title, &placeholder.filters[0]), "Hello, Rust! Hello, World!".to_string());
+
+    // Removing a word by not providing a replacement.
+    let input = Span::new("{{ £greeting | replace = World, limit: 1 }}");
+    let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
+    let title = "Hello, World! Hello, World!".to_string();
+    assert_eq!(render_filter(title, &placeholder.filters[0]), "Hello, ! Hello, World!".to_string());
+
+    // Removing all words by not providing a replacement and limit.
+    // It is also possible to include `replacement` here to replace them all.
+    let input = Span::new("{{ £greeting | replace = World }}");
+    let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
+    let title = "Hello, World! Hello, World!".to_string();
+    assert_eq!(render_filter(title, &placeholder.filters[0]), "Hello, ! Hello, !".to_string());
 }
 
 #[test]

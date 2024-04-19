@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use blogs_md_easy::{create_variables, parse_filter, parse_filter_args, parse_filter_key_value, parse_filters, parse_meta_comment, parse_meta_key_value, parse_meta_section, parse_placeholder, parse_placeholder_locations, parse_title, parse_until_eol, parse_variable, render_filter, replace_substring, Filter, Marker, Meta, Selection, Span};
+use blogs_md_easy::{create_variables, parse_filter, parse_filter_args, parse_filter_key_value, parse_filters, parse_meta_comment, parse_meta_key_value, parse_meta_section, parse_placeholder, parse_placeholder_locations, parse_title, parse_until_eol, parse_variable, render_filter, replace_substring, Filter, Marker, Meta, Selection, Span, TextCase};
 use nom::combinator::opt;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -296,7 +296,7 @@ fn can_parse_placeholder_uppercase_filter() {
     assert_eq!(placeholders[0].name, "variable".to_string());
     assert_eq!(placeholders[0].selection.start.offset, 3);
     assert_eq!(placeholders[0].selection.end.offset, 31);
-    assert_eq!(placeholders[0].filters, vec![Filter::Uppercase]);
+    assert_eq!(placeholders[0].filters, vec![Filter::Text { case: TextCase::Upper }]);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -311,7 +311,7 @@ fn can_parse_placeholder_with_filter_in_uppercase() {
     assert_eq!(placeholders[0].name, "variable".to_string());
     assert_eq!(placeholders[0].selection.start.offset, 3);
     assert_eq!(placeholders[0].selection.end.offset, 31);
-    assert_eq!(placeholders[0].filters, vec![Filter::Uppercase]);
+    assert_eq!(placeholders[0].filters, vec![Filter::Text { case: TextCase::Upper }]);
 }
 
 #[test]
@@ -323,7 +323,7 @@ fn can_parse_placeholder_with_filter_in_lowercase() {
     assert_eq!(placeholders[0].name, "variable".to_string());
     assert_eq!(placeholders[0].selection.start.offset, 3);
     assert_eq!(placeholders[0].selection.end.offset, 31);
-    assert_eq!(placeholders[0].filters, vec![Filter::Lowercase]);
+    assert_eq!(placeholders[0].filters, vec![Filter::Text { case: TextCase::Lower }]);
 }
 
 #[test]
@@ -335,7 +335,7 @@ fn can_parse_two_placeholder_filters() {
     assert_eq!(placeholders[0].name, "title".to_string());
     assert_eq!(placeholders[0].selection.start.offset, 3);
     assert_eq!(placeholders[0].selection.end.offset, 40);
-    assert_eq!(placeholders[0].filters, vec![Filter::Uppercase, Filter::Lowercase]);
+    assert_eq!(placeholders[0].filters, vec![Filter::Text { case: TextCase::Upper }, Filter::Text { case: TextCase::Lower }]);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -369,7 +369,7 @@ fn can_parse_filter_with_no_args() {
     let (input, filter) = parse_filter(input).expect("parse filter");
 
     assert_eq!(input.fragment(), &"");
-    assert!(matches!(filter, Filter::Lowercase));
+    assert!(matches!(filter, Filter::Text { case: TextCase::Lower }));
 }
 
 #[test]
@@ -438,7 +438,7 @@ fn can_parse_two_filters() {
     dbg!(&filters);
 
     assert!(matches!(filters[0], Filter::Truncate { .. }));
-    assert!(matches!(filters[1], Filter::Lowercase));
+    assert!(matches!(filters[1], Filter::Text { case: TextCase::Lower }));
 
     if let Filter::Truncate { characters, trail } = &filters[0] {
         assert_eq!(characters, &20);
@@ -451,8 +451,16 @@ fn can_parse_all_filters() {
     // We need this test that we don't forget to create match the string to the
     // filter.
     let filters: Vec<(Filter, Filter)> = vec![
-        (Filter::Lowercase, parse_filter(Span::new("lowercase")).expect("lowercase").1),
-        (Filter::Uppercase, parse_filter(Span::new("uppercase")).expect("uppercase").1),
+        // Lower case and uppercase have aliased filters...
+        (Filter::Text { case: TextCase::Lower }, parse_filter(Span::new("lowercase")).expect("lower").1),
+        (Filter::Text { case: TextCase::Upper }, parse_filter(Span::new("UPPERCASE")).expect("upper").1),
+        // ...however, the others need to be provided to the Text filter.
+        (Filter::Text { case: TextCase::Title }, parse_filter(Span::new("text = Title")).expect("title").1),
+        (Filter::Text { case: TextCase::Kebab }, parse_filter(Span::new("text = kebab-case")).expect("kebab").1),
+        (Filter::Text { case: TextCase::Snake }, parse_filter(Span::new("text = snake_case")).expect("snake").1),
+        (Filter::Text { case: TextCase::Pascal }, parse_filter(Span::new("text = PascalCase")).expect("pascal").1),
+        (Filter::Text { case: TextCase::Camel }, parse_filter(Span::new("text = camelCase")).expect("camel").1),
+        (Filter::Text { case: TextCase::Invert }, parse_filter(Span::new("text = invert")).expect("invert").1),
         (Filter::Markdown, parse_filter(Span::new("markdown")).expect("markdown").1),
         (Filter::Reverse, parse_filter(Span::new("reverse")).expect("reverse").1),
         (Filter::Truncate { characters: 100, trail: "...".to_string() }, parse_filter(Span::new("truncate")).expect("truncate").1),
@@ -462,8 +470,14 @@ fn can_parse_all_filters() {
     // filters immediately.
     for (expected_filter, actual_filter) in filters {
         match actual_filter {
-            Filter::Lowercase => assert_eq!(expected_filter, Filter::Lowercase),
-            Filter::Uppercase => assert_eq!(expected_filter, Filter::Uppercase),
+            Filter::Text { case: TextCase::Lower } => assert_eq!(expected_filter, Filter::Text { case: TextCase::Lower }),
+            Filter::Text { case: TextCase::Upper } => assert_eq!(expected_filter, Filter::Text { case: TextCase::Upper }),
+            Filter::Text { case: TextCase::Title } => assert_eq!(expected_filter, Filter::Text { case: TextCase::Title }),
+            Filter::Text { case: TextCase::Kebab } => assert_eq!(expected_filter, Filter::Text { case: TextCase::Kebab }),
+            Filter::Text { case: TextCase::Snake } => assert_eq!(expected_filter, Filter::Text { case: TextCase::Snake }),
+            Filter::Text { case: TextCase::Pascal } => assert_eq!(expected_filter, Filter::Text { case: TextCase::Pascal }),
+            Filter::Text { case: TextCase::Camel } => assert_eq!(expected_filter, Filter::Text { case: TextCase::Camel }),
+            Filter::Text { case: TextCase::Invert } => assert_eq!(expected_filter, Filter::Text { case: TextCase::Invert }),
             Filter::Markdown => assert_eq!(expected_filter, Filter::Markdown),
             Filter::Reverse => assert_eq!(expected_filter, Filter::Reverse),
             Filter::Truncate { characters, trail } => {
@@ -476,14 +490,14 @@ fn can_parse_all_filters() {
 #[test]
 fn filter_lowercase_works() {
     let input = "HELLO, WORLD!".to_string();
-    let output = render_filter(input, &Filter::Lowercase);
+    let output = render_filter(input, &Filter::Text { case: TextCase::Lower });
     assert_eq!(output, "hello, world!");
 }
 
 #[test]
 fn filter_uppercase_works() {
     let input = "hello, world!".to_string();
-    let output = render_filter(input, &Filter::Uppercase);
+    let output = render_filter(input, &Filter::Text { case: TextCase::Upper });
     assert_eq!(output, "HELLO, WORLD!");
 }
 
@@ -499,6 +513,63 @@ fn filter_reverse_works() {
     let input = "Hello, World!".to_string();
     let output = render_filter(input, &Filter::Reverse);
     assert_eq!(output, "!dlroW ,olleH");
+}
+
+#[test]
+fn filter_text_works() {
+    let input = "Hello, World!".to_string();
+    let output = render_filter(input, &Filter::Text { case: TextCase::Lower });
+    assert_eq!(output, "hello, world!");
+
+    let input = "hello, world!".to_string();
+    let output = render_filter(input, &Filter::Text { case: TextCase::Title });
+    assert_eq!(output, "Hello, World!");
+
+    let input = "Hello, World!".to_string();
+    let output = render_filter(input, &Filter::Text { case: TextCase::Kebab });
+    assert_eq!(output, "hello-world");
+}
+
+#[test]
+fn can_parse_text_filter() {
+    // Providing a named argument.
+    let input = Span::new("| text = case: camelCase");
+    let (_, filters) = parse_filters(input).expect("parse camel case");
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0], Filter::Text { case: TextCase::Camel });
+
+    // Providing just default value.
+    let input = Span::new("| text = snake");
+    let (_, filters) = parse_filters(input).expect("parse default value");
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0], Filter::Text { case: TextCase::Snake });
+
+    // Providing no arguments.
+    let input = Span::new("| text");
+    let (_, filters) = parse_filters(input).expect("parse no arguments");
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0], Filter::Text { case: TextCase::Lower });
+}
+
+#[test]
+fn can_render_text_filter() {
+    // Providing no arguments.
+    let input = Span::new("{{ £title | text }}");
+    let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
+    let title = "HELLO, WORLD!".to_string();
+    assert_eq!(render_filter(title, &placeholder.filters[0]), "hello, world!".to_string());
+
+    // Providing unnamed argument.
+    let input = Span::new("{{ £title | text = pascal }}");
+    let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
+    let title = "hello, world!".to_string();
+    assert_eq!(render_filter(title, &placeholder.filters[0]), "HelloWorld".to_string());
+
+    // Providing a named argument.
+    let input = Span::new("{{ £title | text = case: snake }}");
+    let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
+    let title = "Hello, World!".to_string();
+    assert_eq!(render_filter(title, &placeholder.filters[0]), "hello_world".to_string());
 }
 
 #[test]

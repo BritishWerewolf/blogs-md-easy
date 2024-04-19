@@ -1,5 +1,6 @@
 :meta
-author = John Doe
+package = blogs-md-easy
+author = British Werewolf
 :meta
 # Markdown Title
 This is the first paragraph of this file.

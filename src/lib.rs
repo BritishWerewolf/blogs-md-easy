@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error};
+use std::{collections::HashMap, error::Error, str::FromStr};
 use nom::{branch::alt, bytes::complete::{tag, take_till, take_until, take_while, take_while_m_n}, character::complete::{alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till, separated_list1}, sequence::{delimited, preceded, separated_pair, terminated, tuple}, IResult, Parser};
 use nom_locate::LocatedSpan;
 
@@ -7,36 +7,165 @@ use nom_locate::LocatedSpan;
 /// A [`LocatedSpan`] of a string slice, with lifetime `'a`.
 pub type Span<'a> = LocatedSpan<&'a str>;
 
-/// Predefined functions names that will be used within [`render_filter`] to
-/// convert a value.
+/// A list of all the available text case `Filter`s.
 #[derive(Clone, Debug, PartialEq)]
-pub enum Filter {
+pub enum TextCase {
     /// Converts a string into lowercase.
     ///
     /// # Example
     /// ```rust
-    /// use blogs_md_easy::{render_filter, Filter};
+    /// use blogs_md_easy::{render_filter, Filter, TextCase};
     ///
     /// let input = "Hello, World!".to_string();
-    /// let filter = Filter::Lowercase;
+    /// let filter = Filter::Text { case: TextCase::Lower };
     /// let output = render_filter(input, &filter);
     ///
     /// assert_eq!(output, "hello, world!");
     /// ```
-    Lowercase,
+    Lower,
     /// Converts a string into uppercase.
     ///
     /// # Example
     /// ```rust
-    /// use blogs_md_easy::{render_filter, Filter};
+    /// use blogs_md_easy::{render_filter, Filter, TextCase};
     ///
     /// let input = "Hello, World!".to_string();
-    /// let filter = Filter::Uppercase;
+    /// let filter = Filter::Text { case: TextCase::Upper };
     /// let output = render_filter(input, &filter);
     ///
     /// assert_eq!(output, "HELLO, WORLD!");
     /// ```
-    Uppercase,
+    Upper,
+    /// Converts a string into title case.
+    ///
+    /// Every character that supersedes a space or hyphen.
+    ///
+    /// # Example
+    /// ```rust
+    /// use blogs_md_easy::{render_filter, Filter, TextCase};
+    ///
+    /// let input = "john doe-bloggs".to_string();
+    /// let filter = Filter::Text { case: TextCase::Title };
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "John Doe-Bloggs");
+    /// ```
+    Title,
+    /// Converts a string into kebab case.
+    ///
+    /// # Example
+    /// ```rust
+    /// use blogs_md_easy::{render_filter, Filter, TextCase};
+    ///
+    /// let input = "kebab case".to_string();
+    /// let filter = Filter::Text { case: TextCase::Kebab };
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "kebab-case");
+    /// ```
+    /// Converts a string into kebab case.
+    ///
+    /// # Example
+    /// ```rust
+    /// use blogs_md_easy::{render_filter, Filter, TextCase};
+    ///
+    /// let input = "kebab case".to_string();
+    /// let filter = Filter::Text { case: TextCase::Kebab };
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "kebab-case");
+    /// ```
+    Kebab,
+    /// Converts a string into snake case.
+    ///
+    /// # Example
+    /// ```rust
+    /// use blogs_md_easy::{render_filter, Filter, TextCase};
+    ///
+    /// let input = "snake case".to_string();
+    /// let filter = Filter::Text { case: TextCase::Snake };
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "snake_case");
+    /// ```
+    Snake,
+    /// Converts a string into Pascal case.
+    ///
+    /// # Example
+    /// ```rust
+    /// use blogs_md_easy::{render_filter, Filter, TextCase};
+    ///
+    /// let input = "pascal case".to_string();
+    /// let filter = Filter::Text { case: TextCase::Pascal };
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "PascalCase");
+    /// ```
+    Pascal,
+    /// Converts a string into camel case.
+    ///
+    /// # Example
+    /// ```rust
+    /// use blogs_md_easy::{render_filter, Filter, TextCase};
+    ///
+    /// let input = "camel case".to_string();
+    /// let filter = Filter::Text { case: TextCase::Camel };
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "camelCase");
+    /// ```
+    Camel,
+    /// Converts a string by inverting the case.
+    ///
+    /// # Example
+    /// ```rust
+    /// use blogs_md_easy::{render_filter, Filter, TextCase};
+    ///
+    /// let input = "Hello, World!".to_string();
+    /// let filter = Filter::Text { case: TextCase::Invert };
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "hELLO, wORLD!");
+    /// ```
+    Invert,
+}
+
+impl FromStr for TextCase {
+    type Err = String;
+
+    /// Parse a string slice, into a `TextCase`.
+    ///
+    /// # Examples
+    /// ```rust
+    /// use blogs_md_easy::TextCase;
+    /// // For both lower and upper, the word "case" can be appended.
+    /// assert_eq!("lower".parse::<TextCase>(), Ok(TextCase::Lower));
+    /// assert_eq!("lowercase".parse::<TextCase>(), Ok(TextCase::Lower));
+    ///
+    /// // For programming cases, the word case can be appended in that style.
+    /// assert_eq!("snake".parse::<TextCase>(), Ok(TextCase::Snake));
+    /// assert_eq!("snake_case".parse::<TextCase>(), Ok(TextCase::Snake));
+    /// assert_eq!("title".parse::<TextCase>(), Ok(TextCase::Title));
+    /// assert_eq!("Title".parse::<TextCase>(), Ok(TextCase::Title));
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "lower" | "lowercase" => Ok(Self::Lower),
+            "upper" | "uppercase" | "UPPERCASE" => Ok(Self::Upper),
+            "title" | "Title" => Ok(Self::Title),
+            "kebab" | "kebab-case" => Ok(Self::Kebab),
+            "snake" | "snake_case" => Ok(Self::Snake),
+            "pascal" | "PascalCase" => Ok(Self::Pascal),
+            "camel" | "camelCase" => Ok(Self::Camel),
+            "invert" | "inverse" => Ok(Self::Invert),
+            _ => Err(format!("Unable to parse TextCase from '{}'", s)),
+        }
+    }
+}
+
+/// Predefined functions names that will be used within [`render_filter`] to
+/// convert a value.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Filter {
     /// Converts a string from Markdown into HTML.
     ///
     /// # Example
@@ -78,8 +207,66 @@ pub enum Filter {
     /// assert_eq!(output, "!dlroW ,olleH");
     /// ```
     Reverse,
+    /// Converts text to another format.
+    ///
+    /// Currently, the only argument is `case`.
+    ///
+    /// `Default argument: case`
+    ///
+    /// # Example
+    /// ```rust
+    /// use blogs_md_easy::{render_filter, Filter, TextCase};
+    ///
+    /// let input = "Hello, World!".to_string();
+    /// let filter = Filter::Text { case: TextCase::Upper };
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "HELLO, WORLD!");
+    /// ```
+    Text {
+        /// Specifies the [`TextCase`] that the font should use.
+        ///
+        /// `Default: lower`
+        ///
+        /// # Examples
+        /// Without an argument, this will default to lowercase.
+        /// ```rust
+        /// use blogs_md_easy::{parse_filter, Filter, Span, TextCase};
+        ///
+        /// let input = Span::new("text");
+        /// let (_, filter) = parse_filter(input).unwrap();
+        ///
+        /// assert!(matches!(filter, Filter::Text { .. }));
+        /// assert_eq!(filter, Filter::Text { case: TextCase::Lower });
+        /// ```
+        ///
+        /// Passing in a case, without an argument is possible too.
+        /// ```rust
+        /// use blogs_md_easy::{parse_filter, Filter, Span, TextCase};
+        ///
+        /// let input = Span::new("text = upper");
+        /// let (_, filter) = parse_filter(input).unwrap();
+        ///
+        /// assert!(matches!(filter, Filter::Text { .. }));
+        /// assert_eq!(filter, Filter::Text { case: TextCase::Upper });
+        /// ```
+        ///
+        /// Alternatively, it is possible to be more explicit.
+        /// ```rust
+        /// use blogs_md_easy::{parse_filter, Filter, Span, TextCase};
+        ///
+        /// let input = Span::new("text = case: snake");
+        /// let (_, filter) = parse_filter(input).unwrap();
+        ///
+        /// assert!(matches!(filter, Filter::Text { .. }));
+        /// assert_eq!(filter, Filter::Text { case: TextCase::Snake });
+        /// ```
+        case: TextCase,
+    },
     /// Truncates a string to a given length, and applies a `trail`ing string,
     /// if the string was truncated.
+    ///
+    /// `Default argument: characters`
     ///
     /// # Example
     /// ```rust
@@ -703,11 +890,11 @@ pub fn parse_filter_args(input: Span) -> IResult<Span, Vec<(&str, &str)>> {
 /// # Examples
 /// A filter with no arguments.
 /// ```rust
-/// use blogs_md_easy::{parse_filter, Filter, Span};
+/// use blogs_md_easy::{parse_filter, Filter, Span, TextCase};
 ///
 /// let input = Span::new("lowercase");
 /// let (_, filter) = parse_filter(input).unwrap();
-/// assert!(matches!(filter, Filter::Lowercase));
+/// assert!(matches!(filter, Filter::Text { case: TextCase::Lower }));
 /// ```
 ///
 /// A filter with just a value, but no key.  \
@@ -757,8 +944,8 @@ pub fn parse_filter(input: Span) -> IResult<Span, Filter> {
         let args: HashMap<&str, &str> = args.unwrap_or_default().into_iter().collect();
 
         (input, match name.fragment().to_lowercase().trim() {
-            "lowercase" => Filter::Lowercase,
-            "uppercase" => Filter::Uppercase,
+            "lowercase" => Filter::Text { case: TextCase::Lower },
+            "uppercase" => Filter::Text { case: TextCase::Upper },
             "markdown" => Filter::Markdown,
             "reverse" => Filter::Reverse,
             "truncate" => Filter::Truncate {
@@ -767,9 +954,18 @@ pub fn parse_filter(input: Span) -> IResult<Span, Filter> {
                 characters: args.get("characters").unwrap_or(
                     args.get("_").unwrap_or(&"100")
                 ).parse::<u8>().unwrap_or(100),
-                trail: args.get("trail").unwrap_or(&"...").to_string()
+                trail: args.get("trail").unwrap_or(&"...").to_string(),
             },
-            _ => unreachable!(),
+            "text" => Filter::Text {
+                // Default is `case: TextCase::Lower`.
+                case: args.get("case").unwrap_or(
+                    args.get("_").unwrap_or(&"lower")
+                ).parse::<TextCase>().unwrap_or(TextCase::Lower)
+            },
+            _ => {
+                dbg!(name);
+                unreachable!();
+            }
         })
     })
 }
@@ -779,22 +975,22 @@ pub fn parse_filter(input: Span) -> IResult<Span, Filter> {
 /// # Examples
 /// A single filter.
 /// ```rust
-/// use blogs_md_easy::{parse_filters, Filter, Span};
+/// use blogs_md_easy::{parse_filters, Filter, Span, TextCase};
 ///
 /// // As in {{ £my_variable | lowercase }}
 /// let input = Span::new("| lowercase");
 /// let (_, filters) = parse_filters(input).unwrap();
-/// assert!(matches!(filters[0], Filter::Lowercase));
+/// assert!(matches!(filters[0], Filter::Text { case: TextCase::Lower }));
 /// ```
 ///
 /// Multiple filters chained together with `|`.
 /// ```rust
-/// use blogs_md_easy::{parse_filters, Filter, Span};
+/// use blogs_md_easy::{parse_filters, Filter, Span, TextCase};
 ///
 /// // As in {{ £my_variable | lowercase | truncate = trail: ..! }}
 /// let input = Span::new("| lowercase | truncate = trail: ..!");
 /// let (_, filters) = parse_filters(input).unwrap();
-/// assert!(matches!(filters[0], Filter::Lowercase));
+/// assert!(matches!(filters[0], Filter::Text { case: TextCase::Lower }));
 /// assert!(matches!(filters[1], Filter::Truncate { .. }));
 /// assert_eq!(filters[1], Filter::Truncate {
 ///     characters: 100,
@@ -838,26 +1034,26 @@ pub fn parse_filters(input: Span) -> IResult<Span, Vec<Filter>> {
 ///
 /// A [`Placeholder`] with a single [`Filter`].
 /// ```rust
-/// use blogs_md_easy::{parse_placeholder, Filter, Span};
+/// use blogs_md_easy::{parse_placeholder, Filter, Span, TextCase};
 ///
 /// let input = Span::new("{{ £variable | uppercase }}");
 /// let (_, placeholder) = parse_placeholder(input).unwrap();
 /// assert_eq!(placeholder.name.as_str(), "variable");
 /// assert_eq!(placeholder.selection.start.offset, 0);
 /// assert_eq!(placeholder.selection.end.offset, 28);
-/// assert!(matches!(placeholder.filters[0], Filter::Uppercase));
+/// assert!(matches!(placeholder.filters[0], Filter::Text { case: TextCase::Upper }));
 /// ```
 ///
 /// A [`Placeholder`] with a two [`Filter`]s.
 /// ```rust
-/// use blogs_md_easy::{parse_placeholder, Filter, Span};
+/// use blogs_md_easy::{parse_placeholder, Filter, Span, TextCase};
 ///
 /// let input = Span::new("{{ £variable | lowercase | truncate = characters: 42 }}");
 /// let (_, placeholder) = parse_placeholder(input).unwrap();
 /// assert_eq!(placeholder.name.as_str(), "variable");
 /// assert_eq!(placeholder.selection.start.offset, 0);
 /// assert_eq!(placeholder.selection.end.offset, 56);
-/// assert!(matches!(placeholder.filters[0], Filter::Lowercase));
+/// assert!(matches!(placeholder.filters[0], Filter::Text { case: TextCase::Lower }));
 /// assert_eq!(placeholder.filters[1], Filter::Truncate { characters: 42, trail: "...".to_string() });
 /// ```
 pub fn parse_placeholder(input: Span) -> IResult<Span, Placeholder> {
@@ -1018,6 +1214,66 @@ pub fn create_variables(markdown: Span, meta_values: Vec<Meta>) -> Result<HashMa
     Ok(variables)
 }
 
+/// Make the start of each word capital, splitting on `sep`.
+///
+/// # Examples
+/// A simple phrase with a space.
+/// ```rust
+/// use blogs_md_easy::split_string;
+///
+/// let phrase = "Hello World";
+/// let phrase = split_string(phrase.to_string(), &[' ', '-']);
+/// //let phrase = phrase.iter().map(|word| word.as_str()).collect::<&str>();
+/// assert_eq!(phrase, vec!["Hello", " ", "World"]);
+/// ```
+///
+/// A name with a hyphen.
+/// ```rust
+/// use blogs_md_easy::split_string;
+///
+/// let phrase = "John Doe-Bloggs";
+/// let phrase = split_string(phrase.to_string(), &[' ', '-']);
+/// //let phrase = phrase.iter().map(|word| word.as_str()).collect::<&str>();
+/// assert_eq!(phrase, vec!["John", " ", "Doe", "-", "Bloggs"]);
+/// ```
+///
+/// Two separators in a row.
+/// ```rust
+/// use blogs_md_easy::split_string;
+///
+/// let phrase = "Hello, World!";
+/// let phrase = split_string(phrase.to_string(), &[' ', ',', '!']);
+/// //let phrase = phrase.iter().map(|word| word.as_str()).collect::<&str>()
+/// assert_eq!(phrase, vec!["Hello", ",", " ", "World", "!"]);
+/// ```
+pub fn split_string(phrase: String, separators: &[char]) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current_word = String::new();
+
+    for c in phrase.chars() {
+        // If we hit a separator; push the current word, then the separator.
+        // Otherwise, add the character to the current word.
+        if separators.contains(&c) {
+            // Make sure that we aren't pushing an empty string into the Vec.
+            // This cannot be added as an `&&` above, because otherwise it
+            // pushes a separator onto the start of `current_word` in the event
+            // that we have two separators in a row.
+            if !current_word.is_empty() {
+                words.push(current_word.clone());
+                current_word.clear();
+            }
+            words.push(c.to_string());
+        } else {
+            current_word.push(c);
+        }
+    }
+
+    if !current_word.is_empty() {
+        words.push(current_word);
+    }
+    words
+}
+
 /// Take a variable, and run it through a [`Filter`] function to get the new
 /// output.
 ///
@@ -1027,10 +1283,10 @@ pub fn create_variables(markdown: Span, meta_values: Vec<Meta>) -> Result<HashMa
 /// # Examples
 /// [`Filter`] that has no arguments.
 /// ```rust
-/// use blogs_md_easy::{render_filter, Filter};
+/// use blogs_md_easy::{render_filter, Filter, TextCase};
 ///
 /// let variable = "hello, world!".to_string();
-/// assert_eq!("HELLO, WORLD!", render_filter(variable, &Filter::Uppercase));
+/// assert_eq!("HELLO, WORLD!", render_filter(variable, &Filter::Text { case: TextCase::Upper }));
 /// ```
 ///
 /// [`Filter`] that has arguments.
@@ -1042,8 +1298,6 @@ pub fn create_variables(markdown: Span, meta_values: Vec<Meta>) -> Result<HashMa
 /// ```
 pub fn render_filter(variable: String, filter: &Filter) -> String {
     match filter {
-        Filter::Lowercase => variable.to_lowercase(),
-        Filter::Uppercase => variable.to_uppercase(),
         Filter::Markdown  => {
             markdown::to_html_with_options(&variable, &markdown::Options {
                 compile: markdown::CompileOptions {
@@ -1063,6 +1317,74 @@ pub fn render_filter(variable: String, filter: &Filter) -> String {
                 new_variable.push_str(trail);
             }
             new_variable
+        },
+        Filter::Text { case } => {
+            let separators = &[' ', ',', '!', '-', '_'];
+            match case {
+                TextCase::Lower => variable.to_lowercase(),
+                TextCase::Upper => variable.to_uppercase(),
+                TextCase::Title => {
+                    split_string(variable, separators)
+                    .into_iter()
+                    .map(|word| {
+                        if word.len() == 1 && separators.contains(&word.chars().next().unwrap_or_default()) {
+                            word
+                        } else {
+                            word[0..1].to_uppercase() + &word[1..]
+                        }
+                    })
+                    .collect::<String>()
+                },
+                TextCase::Kebab => variable
+                    .to_lowercase()
+                    .split(|c| separators.contains(&c))
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<&str>>()
+                    .join("-"),
+                TextCase::Snake => variable
+                    .to_lowercase()
+                    .split(|c| separators.contains(&c))
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<&str>>()
+                    .join("_"),
+                TextCase::Pascal => variable
+                    .split(|c| separators.contains(&c))
+                    .filter(|s| !s.is_empty())
+                    .map(|s| {
+                        let mut c = s.chars();
+                        match c.next() {
+                            Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
+                            None => String::new(),
+                        }
+                    })
+                    .collect::<Vec<String>>()
+                    .join(""),
+                TextCase::Camel => variable
+                    .split(|c| separators.contains(&c))
+                    .filter(|s| !s.is_empty())
+                    .enumerate()
+                    .map(|(i, s)| {
+                        let mut c = s.chars();
+                        match c.next() {
+                            Some(first) => (if i == 0 {
+                                first.to_lowercase().collect::<String>()
+                            } else {
+                                first.to_uppercase().collect::<String>()
+                            }) + c.as_str(),
+                            None => String::new(),
+                        }
+                    })
+                    .collect::<Vec<String>>()
+                    .join(""),
+                TextCase::Invert => variable.chars().fold(String::new(), |mut str, c| {
+                    if c.is_lowercase() {
+                        str.push_str(&c.to_uppercase().collect::<String>());
+                    } else {
+                        str.push_str(&c.to_lowercase().collect::<String>());
+                    }
+                    str
+                }),
+            }
         },
     }
 }

@@ -212,7 +212,7 @@ mod tests {
     <title>MARKDOWN TITLE</title>
 </head>
 <body>
-    <p>By John Doe</p>
+    <p>blogs_md_easy by British Werewolf</p>
     <main><h1>Markdown Title</h1>
 <p>This is the first paragraph of this file.</p>
 <p>Now we have a new paragraph.<br />

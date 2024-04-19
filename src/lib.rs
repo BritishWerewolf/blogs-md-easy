@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error, str::FromStr};
+use std::{collections::HashMap, error::Error, ops::{Div, Mul}, str::FromStr};
 use nom::{branch::alt, bytes::complete::{tag, take_till, take_until, take_while, take_while_m_n}, character::complete::{alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till, separated_list1}, sequence::{delimited, preceded, separated_pair, terminated, tuple}, IResult, Parser};
 use nom_locate::LocatedSpan;
 
@@ -194,6 +194,73 @@ pub enum Filter {
     /// assert_eq!(output, "4");
     /// ```
     Floor,
+    /// Round a number to a given precision.
+    ///
+    /// `Default argument: precision`
+    ///
+    /// # Examples
+    /// Precision of 0 to remove decimal place.
+    /// ```rust
+    /// use blogs_md_easy::{render_filter, Filter};
+    ///
+    /// let input = "1.234".to_string();
+    /// let filter = Filter::Round { precision: 0 };
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "1");
+    /// ```
+    ///
+    /// Precision of 3 for three decimal places.
+    /// ```rust
+    /// use blogs_md_easy::{render_filter, Filter};
+    ///
+    /// let input = "1.23456789".to_string();
+    /// let filter = Filter::Round { precision: 3 };
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "1.235");
+    /// ```
+    Round {
+        /// The number of decimal places to round to.
+        /// A half is rounded down.
+        ///
+        /// `Default: 0`
+        ///
+        /// # Examples
+        /// Providing no arguments.
+        /// ```rust
+        /// use blogs_md_easy::{parse_filter, Filter, Span};
+        ///
+        /// let input = Span::new("round");
+        /// let (_, filter) = parse_filter(input).unwrap();
+        ///
+        /// assert!(matches!(filter, Filter::Round { .. }));
+        /// assert_eq!(filter, Filter::Round { precision: 0 });
+        /// ```
+        ///
+        /// Providing the default argument.
+        /// ```rust
+        /// use blogs_md_easy::{parse_filter, Filter, Span};
+        ///
+        /// let input = Span::new("round = 3");
+        /// let (_, filter) = parse_filter(input).unwrap();
+        ///
+        /// assert!(matches!(filter, Filter::Round { .. }));
+        /// assert_eq!(filter, Filter::Round { precision: 3 });
+        /// ```
+        ///
+        /// Alternatively, it is possible to be more explicit.
+        /// ```rust
+        /// use blogs_md_easy::{parse_filter, Filter, Span};
+        ///
+        /// let input = Span::new("round = precision: 42");
+        /// let (_, filter) = parse_filter(input).unwrap();
+        ///
+        /// assert!(matches!(filter, Filter::Round { .. }));
+        /// assert_eq!(filter, Filter::Round { precision: 42 });
+        /// ```
+        precision: u8,
+    },
 
     // String filter
 
@@ -978,6 +1045,11 @@ pub fn parse_filter(input: Span) -> IResult<Span, Filter> {
             // Maths filters.
             "ceil" => Filter::Ceil,
             "floor" => Filter::Floor,
+            "round" => Filter::Round {
+                precision: args.get("precision").unwrap_or(
+                    args.get("_").unwrap_or(&"0")
+                ).parse::<u8>().unwrap_or(0),
+            },
 
             // String filters.
             "lowercase" => Filter::Text { case: TextCase::Lower },
@@ -1337,6 +1409,18 @@ pub fn render_filter(variable: String, filter: &Filter) -> String {
         // Maths filters.
         Filter::Ceil => variable.parse::<f64>().unwrap_or_default().ceil().to_string(),
         Filter::Floor => variable.parse::<f64>().unwrap_or_default().floor().to_string(),
+        Filter::Round { precision } => variable
+            .parse::<f64>()
+            .unwrap_or_default()
+            // Be default, Rust rounds away all decimals.
+            // So we want to move the decimal places `precision` places to the
+            // left.
+            .mul(10_f64.powi((*precision as u32) as i32))
+            // Now round, removing all decimal places.
+            .round()
+            // Now move the decimal place back.
+            .div(10_f64.powi((*precision as u32) as i32))
+            .to_string(),
 
         // String filters.
         Filter::Markdown  => {

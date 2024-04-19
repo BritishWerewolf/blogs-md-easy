@@ -453,6 +453,7 @@ fn can_parse_all_filters() {
     let filters: Vec<(Filter, Filter)> = vec![
         (Filter::Ceil, parse_filter(Span::new("ceil")).expect("ceil").1),
         (Filter::Floor, parse_filter(Span::new("floor")).expect("floor").1),
+        (Filter::Round { precision: 3 }, parse_filter(Span::new("round = 3")).expect("round").1),
 
         // Lower case and uppercase have aliased filters...
         (Filter::Text { case: TextCase::Lower }, parse_filter(Span::new("lowercase")).expect("lower").1),
@@ -476,6 +477,7 @@ fn can_parse_all_filters() {
             // Maths filters.
             Filter::Ceil => assert_eq!(expected_filter, Filter::Ceil),
             Filter::Floor => assert_eq!(expected_filter, Filter::Floor),
+            Filter::Round { precision } => assert_eq!(expected_filter, Filter::Round { precision }),
 
             // String filters.
             Filter::Text { case: TextCase::Lower } => assert_eq!(expected_filter, Filter::Text { case: TextCase::Lower }),
@@ -515,6 +517,67 @@ fn filter_floor_works() {
     let input = "1.234".to_string();
     let output = render_filter(input, &Filter::Floor);
     assert_eq!(output, "1");
+}
+
+#[test]
+fn filter_round_works() {
+    let input = "-1.23456789".to_string();
+    let output = render_filter(input, &Filter::Round { precision: 3 });
+    assert_eq!(output, "-1.235");
+
+    let input = "1.23456789".to_string();
+    let output = render_filter(input, &Filter::Round { precision: 3 });
+    assert_eq!(output, "1.235");
+
+    let input = "1.23456789".to_string();
+    let output = render_filter(input, &Filter::Round { precision: 0 });
+    assert_eq!(output, "1");
+
+    let input = "9.87654321".to_string();
+    let output = render_filter(input, &Filter::Round { precision: 0 });
+    assert_eq!(output, "10");
+}
+
+#[test]
+fn can_parse_round_filter() {
+    // Providing no arguments.
+    let input = Span::new("| round");
+    let (_, filters) = parse_filters(input).expect("parse no arguments");
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0], Filter::Round { precision: 0 });
+
+    // Providing the default argument.
+    let input = Span::new("| round = 3");
+    let (_, filters) = parse_filters(input).expect("parse no arguments");
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0], Filter::Round { precision: 3 });
+
+    // Providing the named argument.
+    let input = Span::new("| round = precision: 42");
+    let (_, filters) = parse_filters(input).expect("parse no arguments");
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0], Filter::Round { precision: 42 });
+}
+
+#[test]
+fn can_render_round_filter() {
+    // Providing no arguments.
+    let input = Span::new("{{ £number | round }}");
+    let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
+    let number = "1.234567890".to_string();
+    assert_eq!(render_filter(number, &placeholder.filters[0]), "1".to_string());
+
+    // Providing the default argument.
+    let input = Span::new("{{ £number | round = 3 }}");
+    let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
+    let number = "1.234567890".to_string();
+    assert_eq!(render_filter(number, &placeholder.filters[0]), "1.235".to_string());
+
+    // Providing the named argument.
+    let input = Span::new("{{ £number | round = precision: 6 }}");
+    let (_, placeholder) = parse_placeholder(input).expect("to parse placeholder");
+    let number = "1.234567890".to_string();
+    assert_eq!(render_filter(number, &placeholder.filters[0]), "1.234568".to_string());
 }
 
 #[test]

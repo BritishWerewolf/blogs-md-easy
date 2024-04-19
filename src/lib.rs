@@ -724,6 +724,10 @@ pub fn parse_meta_comment(input: Span) -> IResult<Span, Span> {
 /// let input = Span::new("£publish_date");
 /// let (_, variable) = parse_meta_key(input).unwrap();
 /// assert_eq!(variable.fragment(), &"publish_date");
+///
+/// let input = Span::new("$publish_date");
+/// let (_, variable) = parse_meta_key(input).unwrap();
+/// assert_eq!(variable.fragment(), &"publish_date");
 /// ```
 /// An invalid example, variables cannot start with a number.
 /// ```rust
@@ -735,7 +739,7 @@ pub fn parse_meta_comment(input: Span) -> IResult<Span, Span> {
 /// ```
 pub fn parse_meta_key(input: Span) -> IResult<Span, Span> {
     preceded(
-        opt(tag("£")),
+        opt(alt((tag("£"), tag("$")))),
         parse_variable_name
     )(input)
 }
@@ -1005,6 +1009,15 @@ pub fn parse_variable_name(input: Span) -> IResult<Span, Span> {
 /// assert_eq!(variable.fragment(), &"variable");
 /// ```
 ///
+/// In keeping with what people are used to, it is also possible to use a `$`.
+/// ```rust
+/// use blogs_md_easy::{parse_variable, Span};
+///
+/// let input = Span::new("$variable");
+/// let (_, variable) = parse_variable(input).unwrap();
+/// assert_eq!(variable.fragment(), &"variable");
+/// ```
+///
 /// Failing to start with a `£` will return an error.
 /// ```rust
 /// use blogs_md_easy::{parse_variable, Span};
@@ -1015,7 +1028,7 @@ pub fn parse_variable_name(input: Span) -> IResult<Span, Span> {
 /// ```
 pub fn parse_variable(input: Span) -> IResult<Span, Span> {
     preceded(
-        tag("£"),
+        alt((tag("£"), tag("$"))),
         parse_variable_name
     )(input)
 }

@@ -46,7 +46,7 @@ In the case that a single template is used, the output file name will simple be 
 
 Variables must follow these rules:
 * Must be wrapped in `{{` and `}}`, white space either side is optional.
-* Must be prefixed with a `£` character.
+* Must be prefixed with a `£` or `$` character.
 * Must start with a letter from a to z, case insensitive.
 * Must only contain the following characters: `a-z`, `0-9`, `_`.
 
@@ -238,6 +238,17 @@ Which would generate the following output
     </section>
 </body>
 </html>
+```
+
+For convenience, meta values do not need to be surrounded by quotes, they will be parsed until a new line. However, if new lines are required in a value, then the value will need to be surrounded by double quotes (`"`).  
+As is standard, quotes will need to be escaped in order to prevent premature closure of the string; to do this, simply put a backslash before a double quote, like so `\"`.
+
+```md
+:meta
+header = Some Company
+footer = "Copyright
+John \"The Mystery\" Doe"
+:meta
 ```
 
 #### Comments

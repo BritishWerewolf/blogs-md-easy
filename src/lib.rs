@@ -1,5 +1,5 @@
 use std::{collections::HashMap, error::Error, ops::{Div, Mul}, str::FromStr};
-use nom::{branch::alt, bytes::complete::{tag, take_till, take_until, take_while, take_while_m_n}, character::complete::{alphanumeric1, anychar, multispace0, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till, separated_list1}, sequence::{delimited, preceded, separated_pair, terminated, tuple}, IResult, Parser};
+use nom::{branch::alt, bytes::complete::{escaped, is_not, tag, take_till, take_until, take_while, take_while_m_n}, character::complete::{alphanumeric1, anychar, multispace0, one_of, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till, separated_list1}, sequence::{delimited, preceded, separated_pair, terminated, tuple}, IResult, Parser};
 use nom_locate::LocatedSpan;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -677,7 +677,7 @@ pub struct Placeholder {
 /// assert_eq!(until_eol.fragment(), &"Hello, World!");
 /// ```
 ///
-/// When there is a newline.
+/// When there is a newline, the newline is consumed.
 /// ```rust
 /// use blogs_md_easy::{parse_until_eol, Span};
 ///
@@ -746,7 +746,8 @@ pub fn parse_meta_key(input: Span) -> IResult<Span, Span> {
 
 /// Parse any number of characters until the end of the line or string.
 ///
-/// # Example
+/// # Examples
+/// Meta values are essentially just anything that isn't a newline.
 /// ```rust
 /// use blogs_md_easy::{parse_meta_value, Span};
 ///
@@ -754,10 +755,34 @@ pub fn parse_meta_key(input: Span) -> IResult<Span, Span> {
 /// let (_, value) = parse_meta_value(input).unwrap();
 /// assert_eq!(value.fragment(), &"This is a value");
 /// ```
+///
+/// However, if you need newlines, then wrap the string in double quotes.  \
+/// Don't forget to escape your quotes too!
+/// ```rust
+/// use blogs_md_easy::{parse_meta_value, Span};
+///
+/// let input = Span::new(r#""This \"value\" is on
+/// a new line""#);
+/// let (_, value) = parse_meta_value(input).unwrap();
+/// assert_eq!(value.fragment(), &"This \\\"value\\\" is on\na new line");
+/// ```
 pub fn parse_meta_value(input: Span) -> IResult<Span, Span> {
-    // The value of the variable, everything after the equals sign.
-    // Continue to a newline or the end of the string.
-    parse_until_eol(input)
+    alt((
+        // Match a delimited quote string.
+        delimited(
+            tag(r#"""#),
+            // Match everything that isn't `\"`.
+            escaped(
+                is_not(r#"\""#),
+                '\\',
+                one_of(r#"nrt\""#)
+            ),
+            tag(r#"""#),
+        ),
+        // The value of the variable, everything after the equals sign.
+        // Continue to a newline or the end of the string.
+        parse_until_eol,
+    ))(input)
 }
 
 /// Parse a key-value pair of meta_key and meta_value.

@@ -242,6 +242,26 @@ fn can_parse_meta_section_with_comments() {
     assert_eq!(input.fragment(), &"# Markdown title\nThis is my content");
 }
 
+#[test]
+fn can_parse_meta_key_values() {
+    let input = Span::new("key = value");
+    let (_, meta) = parse_meta_key_value(input).expect("no quotes");
+    assert_eq!(meta, Meta::new("key", "value"));
+
+    let input = Span::new(r#"key = "value""#);
+    let (_, meta) = parse_meta_key_value(input).expect("quotes");
+    assert_eq!(meta, Meta::new("key", "value"));
+
+    let input = Span::new(r#"key = "value
+here""#);
+    let (_, meta) = parse_meta_key_value(input).expect("newline");
+    assert_eq!(meta, Meta::new("key", "value\nhere"));
+
+    let input = Span::new(r#"key = "I said \"John Doe\"""#);
+    let (_, meta) = parse_meta_key_value(input).expect("escaped quotes");
+    assert_eq!(meta, Meta::new("key", r#"I said \"John Doe\""#));
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Placeholders
 

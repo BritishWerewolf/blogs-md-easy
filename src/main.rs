@@ -217,6 +217,8 @@ mod tests {
 <p>This is the first paragraph of this file.</p>
 <p>Now we have a new paragraph.<br />
 And this is a newline.</p></main>
+    <footer><p>Hello, &quot;World&quot; this<br />
+is a newline</p></footer>
 </body>
 "#);
     }

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use blogs_md_easy::{create_variables, parse_filter, parse_filter_args, parse_filter_key_value, parse_filters, parse_meta_comment, parse_meta_key_value, parse_meta_section, parse_placeholder, parse_placeholder_locations, parse_title, parse_until_eol, parse_variable, render_filter, replace_substring, Filter, Marker, Meta, Selection, Span, TextCase};
+use blogs_md_easy::{create_variables, parse_filter, parse_filter_args, parse_filter_key_value, parse_filters, parse_function, parse_meta_comment, parse_meta_key_value, parse_meta_section, parse_placeholder, parse_placeholder_locations, parse_title, parse_until_eol, parse_variable, render_filter, replace_substring, Filter, Function, Marker, Meta, Selection, Span, TextCase};
 use nom::combinator::opt;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -260,6 +260,22 @@ here""#);
     let input = Span::new(r#"key = "I said \"John Doe\"""#);
     let (_, meta) = parse_meta_key_value(input).expect("escaped quotes");
     assert_eq!(meta, Meta::new("key", r#"I said \"John Doe\""#));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Functions
+#[test]
+fn can_parse_function_with_no_args() {
+    let input = Span::new("function_name()");
+    let (_, function) = parse_function(input).expect("to parse function");
+    assert_eq!(function, Function::new("function_name".to_string(), vec![]));
+}
+
+#[test]
+fn can_parse_function_with_args() {
+    let input = Span::new("function_name(arg1, arg2)");
+    let (_, function) = parse_function(input).expect("to parse function");
+    assert_eq!(function, Function::new("function_name".to_string(), vec!["arg1".to_string(), "arg2".to_string()]));
 }
 
 ////////////////////////////////////////////////////////////////////////////////

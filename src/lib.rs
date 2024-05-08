@@ -1,5 +1,5 @@
 use std::{collections::HashMap, error::Error, ops::{Div, Mul}, str::FromStr};
-use nom::{branch::alt, bytes::complete::{escaped, is_not, tag, take_till, take_until, take_while, take_while_m_n}, character::complete::{alphanumeric1, anychar, multispace0, one_of, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till, separated_list1}, sequence::{delimited, preceded, separated_pair, terminated, tuple}, IResult, Parser};
+use nom::{branch::alt, bytes::complete::{escaped, is_not, tag, take_till, take_until, take_while, take_while_m_n}, character::complete::{alphanumeric1, anychar, multispace0, one_of, space0}, combinator::{opt, recognize, rest}, multi::{many0, many1, many_till, separated_list0, separated_list1}, sequence::{delimited, preceded, separated_pair, terminated, tuple}, IResult, Parser};
 use nom_locate::LocatedSpan;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -531,6 +531,39 @@ pub enum Filter {
         /// });
         /// ```
         trail: String,
+    },
+}
+
+/// Instead of being replaced with variables from a placeholder [`Meta`] struct,
+/// this will be replaced with the value of the function.
+///
+/// # Example
+/// Functions don't need arguments.
+/// ```rust
+/// use blogs_md_easy::{parse_function, Function, Span};
+///
+/// let input = Span::new("my_function()");
+/// let (_, function) = parse_function(input).unwrap();
+/// assert_eq!(function, Function::new("my_function".to_string(), vec![]));
+/// ```
+///
+/// Alternatively, some functions take arguments, which do not need quoting.
+/// ```rust
+/// use blogs_md_easy::{parse_function, Function, Span};
+///
+/// let input = Span::new("my_function(arg1, arg2)");
+/// let (_, function) = parse_function(input).unwrap();
+/// assert_eq!(function, Function::new("my_function".to_string(), vec!["arg1".to_string(), "arg2".to_string()]));
+/// ```
+#[derive(Debug, PartialEq, Eq)]
+pub struct Function {
+    name: String,
+    arguments: Vec<String>,
+}
+
+impl Function {
+    pub fn new(name: String, arguments: Vec<String>) -> Self {
+        Self { name, arguments }
     }
 }
 
@@ -1056,6 +1089,36 @@ pub fn parse_variable(input: Span) -> IResult<Span, Span> {
         alt((tag("£"), tag("$"))),
         parse_variable_name
     )(input)
+}
+
+pub fn parse_function_arguments(input: Span) -> IResult<Span, Vec<String>> {
+    separated_list0(tag(","), take_while(|c| c != ',' && c != ')'))(input)
+    .map(|(input, arguments)| {
+        let arguments = arguments.into_iter()
+        .filter_map(|argument| {
+            let argument = argument.trim().to_string();
+            match argument.len() == 0 {
+                true  => None,
+                false => Some(argument),
+            }
+        })
+        .collect::<Vec<String>>();
+        (input, arguments)
+    })
+}
+
+pub fn parse_function(input: Span) -> IResult<Span, Function> {
+    tuple((
+        parse_variable_name,
+        delimited(
+            tag("("),
+            parse_function_arguments,
+            tag(")"),
+        ),
+    ))(input)
+    .map(|(input, (name, arguments))| {
+        (input, Function::new(name.fragment().to_string(), arguments))
+    })
 }
 
 /// Parser that will parse exclusively the key-values from after a filter.  \

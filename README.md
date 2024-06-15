@@ -3,7 +3,7 @@
 [![GitHub Repo stars](https://img.shields.io/github/stars/BritishWerewolf/blogs-md-easy)](https://github.com/BritishWerewolf/blogs-md-easy)
 
 # Blogs Made Easy
-Iteratively convert a collection of Markdown files into a respective HTML template.
+Iteratively convert a collection of Markdown files into a respective template.
 
 ## Installation
 Blogs Made Easy is available as both a binary and a library, both from this package.
@@ -23,9 +23,9 @@ $ cargo add blogs-md-easy
 ```
 
 ## Usage
-Below is the help page for the program binary, if you want to read the documentation for the library, that is available on [docs.rs](https://docs.rs/blogs-md-easy).
+Below is the help page for the program binary, if you want to read the documentation for the library, that is available on [docs.rs](https://docs.rs/blogs-md-easy) (and will always have the most up to date documentation).
 ```
-Iteratively convert a collection of Markdown files into a respective HTML template.
+Iteratively convert a collection of Markdown files into a respective template.
 
 Usage: blogs-md-easy.exe [OPTIONS] --templates <FILES>... --markdowns <FILES>...
 
@@ -39,10 +39,11 @@ Options:
 ```
 
 ### Templates
-Templates are `.html` files that use variables to populate the file.
+Templates can be any file, as long as they are text based. Typically they will be in a format like `.html`, or `.xml`, although there is no restrictions placed here.  
+As long as you can write placeholders (more on these below), then any format is acceptable.
 
-If more than a single template is provided, then the file stem will be used in the name of the output file. This is to avoid each template generating a new HTML file and overwriting previous files.  
-In the case that a single template is used, the output file name will simple be the Markdown file with the extension of `.html` instead of `.md`.
+If more than a single template is provided, then the file stem will be used in the name of the output file. This is to avoid each template generating a new file and overwriting previous files.  
+In the case that a single template is used, the output file name will simple be the Markdown file with the extension of the template instead of `.md`.
 
 Variables must follow these rules:
 * Must be wrapped in `{{` and `}}`, white space either side is optional.
@@ -74,7 +75,7 @@ Example of a valid template page.
 </html>
 ```
 Firstly, there is a `£description` variable that is used for the `meta` description tag.  
-This will be provided within the `meta` section of each Markdown file, as will the `£author` variable.
+This will be provided within the `meta` section of each Markdown file, as will the `£author` variable. It's important to note that the `meta` section of the Markdown, and the HTML file have no correlation.
 
 Additionally, the `£title` variable is used in two locations: for the document title, and as a heading.  
 Variables can be reused as many times as required, and will be replaced, providing they follow the above rules.
@@ -107,11 +108,24 @@ Let's use our previous template, and apply a simple filter to the `£title` vari
 ```
 By providing the function after a pipe (`|`) character, we can mutate that variable in that particular location. This is particularly useful in cases where a placeholder is required multiple times through a template, but the formatting should be different in all cases.
 
-These are currently the only supported filters; with their arguments, if available.  
+These are many filters available and they are all documented thoroughly on [docs.rs](https://docs.rs/blogs-md-easy/latest/blogs_md_easy/enum.Filter.html).
+
+In essence, you only need to provide a filter's name - even if that filter accepts arguments.  
+If the filter accepts arguments, then one argument will be considered "default" and it's name can be omitted. These defaults are described below, otherwise you must provide the name of the argument.  
+All arguments are given a default value too.
+
 We'll talk about arguments later on, but for now, know that the argument name is optional and only a value is required.
+* `ceil` - Rounds a numeric value up. Returns `0` for any non numeric value.
+* `floor` - Rounds a numeric value down. Returns `0` for any non numeric value.
+* `round` - Rounds a numeric value. Returns `0` for any non numeric value.
+    * `precision` - **default** - The number of decimal places.
 * `lowercase` - Convert the value to lowercase.
 * `uppercase` - Convert the value to uppercase.
 * `markdown` - Convert the value from Markdown into HTML.
+* `replace` - Replace a given string with another string, this can be limited too.
+    * `find` - **default** - What we want to `replace`.
+    * `replacement` - What we will replace `find` with. Defaults to an empty string.
+    * `limit` - How many instances should be replaced from the start of the string. Defaults to `None`, otherwise should be a numeric value.
 * `reverse` - Reverse the string order.
 * `truncate` - Truncate the value to the given length, and adds trailing character(s) if the string is truncated.
     * `characters` - **default** - The number of characters to limit a string to.
@@ -149,9 +163,9 @@ Every filter can be provided with just the name, as every argument has been give
 What that means, is that these are all the same thing.
 ```html
 <p>{{ £my_paragraph | truncate }}</p>
-<p>{{ £my_paragraph | truncate = 20 }}</p>
+<p>{{ £my_paragraph | truncate = 100 }}</p>
 <p>{{ £my_paragraph | truncate = trail: ... }}</p>
-<p>{{ £my_paragraph | truncate = characters: 20, trail: ... }}</p>
+<p>{{ £my_paragraph | truncate = characters: 100, trail: ... }}</p>
 ```
 As you can see, you can pick and choose which arguments you want to overwrite - if any.
 
@@ -265,7 +279,8 @@ description = This will appear in Search Engines.
 The above meta key-values that would be parsed would be `author` and `description`, with the values being `John Doe` and `This will appear in Search Engines.` respectively.
 
 ### Output
-All HTML files will be generated with the exact same name as the Markdown that they are converting, but with the template's extension. 
+All generated files will be be given the exact same name as the Markdown that they are converting, but with the template's extension.  
+However, if there are multiple templates, then the templates name 
 
 By default, the file will be created in the same directory as the Markdown file, however, by providing `--output-dir` (or `-o` if that's easier) the output directory can be changed.  
 This will not rename the file, but rather just place it in the specified directory.

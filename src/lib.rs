@@ -170,7 +170,8 @@ pub enum Filter {
 
     /// Rounds a numeric value up to the nearest whole number.
     ///
-    /// # Example
+    /// # Examples
+    /// On numbers it will round.
     /// ```rust
     /// use blogs_md_easy::{render_filter, Filter};
     ///
@@ -179,6 +180,17 @@ pub enum Filter {
     /// let output = render_filter(input, &filter);
     ///
     /// assert_eq!(output, "2");
+    /// ```
+    ///
+    /// On strings it will default to `0`.
+    /// ```rust
+    /// use blogs_md_easy::{render_filter, Filter};
+    ///
+    /// let input = "Hello, World!".to_string();
+    /// let filter = Filter::Ceil;
+    /// let output = render_filter(input, &filter);
+    ///
+    /// assert_eq!(output, "0");
     /// ```
     Ceil,
     /// Rounds a numeric value down to the nearest whole number.
